@@ -8,6 +8,7 @@ from functools import partial
 import importlib
 from itertools import compress
 import os
+from pathlib import Path
 import pickle
 import sys
 import time
@@ -17,8 +18,10 @@ if sLibPath not in sys.path:
     sys.path.append(sLibPath)
     sys.path.append(os.path.abspath(os.path.join(sLibPath, '..', 'individual', 'vij')))
 
-from impylib import gui, helpers, arrayio, vector
 from vhr import get_vhr
+
+import pandas as pd
+import geopandas as gpd
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -252,20 +255,31 @@ def main(args):
     
     # Set up acquisition timestamp read function
     if config['vars'].t_mode == 'metadata':
+        # TODO fix this path
         RetrieveTimestamp = helpers.RetrieveAcquisitionDateTime
     elif config['vars'].t_mode == 'filename':
-        RetrieveTimestamp = partial(gui.RetrieveDateTimeFromString, 
-            config['vars'].t_slice.start, config['vars'].t_slice.stop, config['vars'].t_format)
+        RetrieveTimestamp = lambda filename: datetime.strptime(filename[config['vars'].t_slice], config['vars'].t_format)
     
     # Possibly overwrite with command line arguments
     if args.pattern:
         config['vars'].i_pattern = args.pattern
     
     # Load vector file
-    lGeom, oTab = vector.CAttributeTable().FromShapefile(config['vars'].path)
+    geom_df = gpd.read_file(config['vars'].path)
     attr_names_to_check = set([config['vars'].attr_id, config['vars'].attr_i_loc])
     if not config['vars'].legacy_mode:
         attr_names_to_check.add(config['vars'].attr_q_loc)
+
+    # subset to only the pid, if pid is passed
+    if args.pid:
+        if pd.api.types.is_numeric_dtype(geom_df[config['vars'].attr_id].dtype):
+            geom_df = geom_df.query(f"{config['vars'].attr_id} == {args.pid}")
+        else:
+            geom_df = geom_df.query(f"{config['vars'].attr_id} == '{args.pid}'")
+
+    
+    # TODO Error handling if attributes not available
+
     if not oTab.ValidateAttributeSet(attr_names_to_check):
         raise RuntimeError('Attribute name error')
         
