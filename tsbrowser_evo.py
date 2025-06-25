@@ -26,7 +26,11 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import matplotlib.patches as patches
+import rasterio
+from pyproj import Transformer
 import numpy as np
+import xarray as xr
+import rioxarray
 
 
 prompt = '--> '
@@ -258,7 +262,7 @@ def main(args):
         # TODO fix this path
         RetrieveTimestamp = helpers.RetrieveAcquisitionDateTime
     elif config['vars'].t_mode == 'filename':
-        RetrieveTimestamp = lambda filename: datetime.strptime(filename[config['vars'].t_slice], config['vars'].t_format)
+        RetrieveTimestamp = lambda filename: datetime.strptime(filename.name[config['vars'].t_slice], config['vars'].t_format)
     
     # Possibly overwrite with command line arguments
     if args.pattern:
@@ -312,158 +316,130 @@ def main(args):
                     tif_lists[res] = sorted(list(glob_files))
                 else:
                     tif_lists[res] = []
-        
+
+        # Create temporal consistency
+        if config['vars'].legacy_mode:
+            t_common = list(map(RetrieveTimestamp, tif_lists['10m']))
+        else:
+            t_qa = list(map(RetrieveTimestamp, tif_lists['q']))
+            t_im = list(map(RetrieveTimestamp, tif_lists['10m']))
+            
+            # Find common timestamps between q and 10m files
+            t_qa_set = set(t_qa)
+            t_im_set = set(t_im)
+            t_common_set = t_qa_set.intersection(t_im_set)
+            t_common = sorted(list(t_common_set))
+            
+            # Track discarded timestamps
+            discarded_qa = t_qa_set - t_common_set
+            discarded_im = t_im_set - t_common_set
+            
+            # Filter tif_lists to keep only files with common timestamps
+            filtered_qa = []
+            filtered_im = []
+            
+            for i, timestamp in enumerate(t_qa):
+                if timestamp in t_common_set:
+                    filtered_qa.append(tif_lists['q'][i])
+            
+            for i, timestamp in enumerate(t_im):
+                if timestamp in t_common_set:
+                    filtered_im.append(tif_lists['10m'][i])
+            
+            tif_lists['q'] = filtered_qa
+            tif_lists['10m'] = filtered_im
+            
+            # Print discarded files
+            if discarded_qa:
+                print('Discarded quality files: {}'.format(
+                    ', '.join(map(lambda x: x.strftime('%Y-%m-%d'), sorted(discarded_qa)))))
+            if discarded_im:
+                print('Discarded image files: {}'.format(
+                    ', '.join(map(lambda x: x.strftime('%Y-%m-%d'), sorted(discarded_im)))))
+                
+        # Get target point geometry in raster data projection
+        # TODO: Do that once outside the loop
+        with rasterio.open(tif_lists['q'][0], 'r') as tif:
+            target_crs = tif.crs
+            bounds = tif.bounds
+            transform = tif.transform
+            pixel_size_x = transform.a
+            pixel_size_y = -transform.e # negative because of raster orientation
+
+        transformer = Transformer.from_crs(geom_df.crs, target_crs, always_xy=True)
+        x_proj, y_proj = transformer.transform(sample_series.geometry.x, sample_series.geometry.y)
+        is_inside_bounds = (bounds.left <= x_proj <= bounds.right) and (bounds.bottom <= y_proj <= bounds.top)
+        if not is_inside_bounds:
+            raise RuntimeError("Sample point outside of raster extent")
+
+        # Convert projected coordinates to pixel indices
+        rows, cols = rasterio.transform.rowcol(transform, [x_proj], [y_proj])
+        row = rows[0]
+        col = cols[0]
+
+        half_width_px = int(config['vars'].chip_width / (2 * pixel_size_x))
+        half_height_px = int(config['vars'].chip_height / (2 * pixel_size_y))
+
+        # Fetch VHR data
+        # vhr_layers = asyncio.run(get_vhr(sample_series.geometry.y, sample_series.geometry.x, config['vars'].vhr_zoom, remove_duplicates=config['vars'].remove_duplicates))
+
+        # Set up temporal filter    
+        selector = [True]*len(tif_lists['10m'])
+        if args.startdate or args.stopdate:
+            try:
+                start_date = datetime.strptime(args.startdate, '%Y%m%d')
+            except ValueError:
+                start_date = t_common[0]
+            try:
+                stop_date = datetime.strptime(args.stopdate, '%Y%m%d')
+            except ValueError:
+                stop_date = t_common[-1] + timedelta(1)
+            for k, target_date in enumerate(t_common):
+                selector[k] = target_date >= start_date and target_date < stop_date
+            tmp = list(compress(tif_lists['10m'], selector))
+            tif_lists['10m'] = tmp
+
+        # Determine the subset for data extraction
+        # TODO Check what we actually need from rioxarray to spatially subset
+        if config['vars'].legacy_mode:
+            oSubset = None
+        else:
+            chips = []
+            # create rasterio window here
+            # and read everything in tif_lists['q']
+            # Convert chip size from meters to pixels
+            # Loop through all rasters
+            for tif_path in tif_lists['q']:
+                da = rioxarray.open_rasterio(tif_path, mask_and_scale=True) #chunks="auto")
+                # Slice the chip
+                chip = da.isel(
+                    y=slice(row - half_height_px, row + half_height_px),
+                    x=slice(col - half_width_px, col + half_width_px)
+                )
+                chips.append(chip)
+            # Combine along new "band" or "variable" dimension
+            chip_stack = xr.concat(chips, dim=pd.Index(t_common, name="time")) # or create custom name
+            
+        # do that already in the beginning
+        selected_band = chip_stack.sel(band=config['vars'].q_band)
+        if config['vars'].q_mode == 'oqb':
+            ts_q_bin = selected_band < config['vars'].threshold
+        elif config['vars'].q_mode == 'score':
+            ts_q_bin = selected_band > config['vars'].threshold
+        elif config['vars'].q_mode == 'scl':
+            ts_q_bin = ~selected_band.isin(config['vars'].masking_classes)
+        overall_assessment = ts_q_bin.mean(dim=["x", "y"])
+        row_slice = slice(half_height_px - config['vars'].specific_radius,
+            half_height_px + config['vars'].specific_radius + 1)
+        col_slice = slice(half_width_px - config['vars'].specific_radius,
+            half_width_px + config['vars'].specific_radius + 1)
+        specific_assessment = ts_q_bin.isel(y=row_slice, x=col_slice).mean(dim=["x", "y"]) >= config['vars'].specific_valid_ratio
+        selector = np.logical_and(overall_assessment, specific_assessment).values
+
         return tif_lists
 
     for index, row in geom_df.iterrows():
         print({k: len(v) for k,v in get_image_files(config, row).items()})
-
-    
-    return
-    tif_lists = dict()
-        
-    # Get image input directory
-    data_dir = oTab[config['vars'].attr_i_loc][iRow]
-    if not os.path.exists(data_dir):
-        raise RuntimeError('Raster data directory does not exist')
-
-    # Get lists of input files for each resolution
-    data_dirs = {res: os.path.join(data_dir, res) for res in ('10m', '20m', '60m')}
-    for key in iter(data_dirs.keys()):
-        try:
-            if config['vars'].i_recursive:
-                tif_lists[key] = sorted(helpers.SearchDirRecursively(data_dirs[key],
-                    config['vars'].i_pattern, nMaxDepth=config['vars'].i_depth))
-            else:
-                tif_lists[key] = sorted(helpers.SearchDir(data_dirs[key], config['vars'].i_pattern))
-        except RuntimeError:
-        # if there are no resolution subdirs in the directory, assume that 10m data is directly there
-            if key == '10m':
-                data_dirs[key] = os.path.realpath(data_dir)
-                if config['vars'].i_recursive:
-                    tif_lists[key] = sorted(helpers.SearchDirRecursively(data_dirs[key],
-                        config['vars'].i_pattern, nMaxDepth=config['vars'].i_depth))
-                else:
-                    tif_lists[key] = sorted(helpers.SearchDir(data_dirs[key], config['vars'].i_pattern))
-            else:
-                data_dirs[key] = None
-                tif_lists[key] = []
-                
-    # Create temporal consistency
-    if config['vars'].legacy_mode:
-        t_common = list(map(RetrieveTimestamp, tif_lists['10m']))
-    else:
-        t_qa = list(map(RetrieveTimestamp, tif_lists['q']))
-        t_im = list(map(RetrieveTimestamp, tif_lists['10m']))
-        discarded, t_common, i_qa, i_im = gui.IntersectInputs(
-            tif_lists['q'], t_qa, tif_lists['10m'], t_im)
-        tif_lists['q'] = i_qa
-        tif_lists['10m'] = i_im
-        if 0 in discarded:
-            print('Discarded quality files: {}'.format(
-                ', '.join(map(lambda x: x.strftime('%Y-%m-%d'), discarded[0]))))
-        if 1 in discarded:
-            print('Discarded image files: {}'.format(
-                ', '.join(map(lambda x: x.strftime('%Y-%m-%d'), discarded[1]))))
-        
-    # Get target point geometry in raster data projection
-    oSampleReader = arrayio.RasterIo.CFileReader(tif_lists['10m'][0])
-    nRasterEpsg = oSampleReader.GetProjection().GetEPSGProjection()
-    oMultiBand = oSampleReader.ReadMultiBandTile(0)
-    oExtent = oMultiBand.GetBand(0).GetMappedTargetRect()
-    oMultiBand= None
-    oSampleReader = None
-    if oTab.Epsg != nRasterEpsg:
-        lGeomReprojected = vector.ReprojectGeom2d([lGeom[iRow]], 'point', oTab.Epsg, nRasterEpsg)
-        oTargetPoint = lGeomReprojected[0]
-    else:
-        oTargetPoint = lGeom[iRow]
-        
-    # Fetch VHR data
-    vhr_layers = asyncio.run(get_vhr(lGeom[iRow].GetY(), lGeom[iRow].GetX(), config['vars'].vhr_zoom, remove_duplicates=config['vars'].remove_duplicates))
-       
-    # Determine the subset for data extraction
-    if config['vars'].legacy_mode:
-        oSubset = None
-    else:
-        if not oExtent.IsPointInside(oTargetPoint):
-            raise RuntimeError('Target point not on raster extent')
-        oSubsetRect = vector.GraphObject2d.CRectDbl()
-        oSubsetRect.SetXYWH(
-            oTargetPoint.GetX() - config['vars'].chip_width/2,
-            oTargetPoint.GetY() - config['vars'].chip_height/2,
-            config['vars'].chip_width,
-            config['vars'].chip_height
-            )
-            
-        # if the target point is close to the raster border, move the chip a bit
-        if not oExtent.IsPointInside(oSubsetRect.GetStart()):
-            dShiftX = max(0, oExtent.GetStart().GetX() - oSubsetRect.GetStart().GetX())
-            dShiftY = max(0, oExtent.GetStart().GetY() - oSubsetRect.GetStart().GetY())
-            oSubsetRect.MoveX(dShiftX)
-            oSubsetRect.MoveY(dShiftY)
-        elif not oExtent.IsPointInside(oSubsetRect.GetEnd()):
-            dShiftX = min(0, oExtent.GetEnd().GetX() - oSubsetRect.GetEnd().GetX())
-            dShiftY = min(0, oExtent.GetEnd().GetY() - oSubsetRect.GetEnd().GetY())
-            oSubsetRect.MoveX(dShiftX)
-            oSubsetRect.MoveY(dShiftY)
-        
-        # Convert to subset tuple format
-        oSubset = (
-            oSubsetRect.GetStart().GetX(),
-            oSubsetRect.GetEnd().GetY(),
-            config['vars'].chip_width,
-            config['vars'].chip_height
-            )
-        
-    # Set up temporal filter    
-    selector = [True]*len(tif_lists['10m'])
-    if args.startdate or args.stopdate:
-        try:
-            start_date = datetime.strptime(args.startdate, '%Y%m%d')
-        except ValueError:
-            start_date = t_common[0]
-        try:
-            stop_date = datetime.strptime(args.stopdate, '%Y%m%d')
-        except ValueError:
-            stop_date = t_common[-1] + timedelta(1)
-        for k, target_date in enumerate(t_common):
-            selector[k] = target_date >= start_date and target_date < stop_date
-        tmp = list(compress(tif_lists['10m'], selector))
-        tif_lists['10m'] = tmp
-
-    # Load quality data
-    if config['vars'].legacy_mode:
-        selector = [True]*len(tif_lists['10m'])
-    else:
-        q_layermap = {'B1': config['vars'].q_band}
-        ts_q = arrayio.Read(list(compress(tif_lists['q'], selector)), q_layermap, oSubset=oSubset, 
-            bProjected=True, oDateTimeRetriever=RetrieveTimestamp)
-    
-    # Set pixel coordinates
-        float_pixel, float_line = ts_q.oMapping.Backward(oTargetPoint.GetX(), oTargetPoint.GetY())
-        args.pixel = int(round(float_pixel))
-        args.line = int(round(float_line))
-        print('\n--> Evaluate {} at pixel/line time series {}/{}'.format(config['vars'].q_mode.upper(),
-            args.pixel, args.line))
-    
-    # Evaluate quality
-        if config['vars'].q_mode == 'oqb':
-            ts_q_bin = ts_q.B1 < config['vars'].threshold
-        elif config['vars'].q_mode == 'score':
-            ts_q_bin = (ts_q.B1 > config['vars'].threshold).filled(False)
-        elif config['vars'].q_mode == 'scl':
-            ts_q_bin = np.ones_like(ts_q.B1, bool)
-            for n_class in config['vars'].masking_classes:
-                ts_q_bin[(ts_q.B1 == n_class).filled(False)] = False
-        # breakpoint()
-        overall_assessment = ts_q_bin.mean(2).mean(1) >= config['vars'].overall_valid_ratio
-        row_slice = slice(args.line - config['vars'].specific_radius,
-            args.line + config['vars'].specific_radius + 1)
-        col_slice = slice(args.pixel - config['vars'].specific_radius,
-            args.pixel + config['vars'].specific_radius + 1)
-        specific_assessment = ts_q_bin[:, row_slice, col_slice].mean(2).mean(1) >= config['vars'].specific_valid_ratio
-        selector = np.logical_and(overall_assessment, specific_assessment)
 
     # Load 10m data
     # breakpoint()
