@@ -279,29 +279,48 @@ def main(args):
 
     
     # TODO Error handling if attributes not available
+    # if not oTab.ValidateAttributeSet(attr_names_to_check):
+    #     raise RuntimeError('Attribute name error')
 
-    if not oTab.ValidateAttributeSet(attr_names_to_check):
-        raise RuntimeError('Attribute name error')
-        
-    # Find the correct table row
-    if oTab.AttrTypes[oTab.AttrNames.index(config['vars'].attr_id)] is int:
-        iRow = oTab[config['vars'].attr_id].index(int(args.pid))
-    else:
-        iRow = oTab[config['vars'].attr_id].index(args.pid) 
-    tif_lists = dict()
-        
-    # Get quality raster input directory
-    if not config['vars'].legacy_mode:
-        data_dir_q = oTab[config['vars'].attr_q_loc][iRow]
-        if not os.path.exists(data_dir_q):
+    # From here everything should be a function which works on a row by row basis
+
+    def get_image_files(config: dict, sample_series: gpd.GeoSeries):
+        tif_lists = dict()
+        if not config['vars'].legacy_mode:
+            # get quality files
+            data_dir_q = Path(sample_series[config['vars'].attr_q_loc])
+            if not data_dir_q.exists():
+                raise RuntimeError('Raster quality directory does not exist')
+            glob_files = data_dir_q.glob(f"{'**/' if config['vars'].q_recursive else ''}{config['vars'].q_pattern}")
+            tif_lists['q'] = sorted(list(glob_files))
+
+        # Get image input directory
+        data_dir = Path(sample_series[config['vars'].attr_i_loc])
+        if not data_dir.exists():
             raise RuntimeError('Raster data directory does not exist')
         
-    # Search for quality files   
-        if config['vars'].q_recursive:
-            tif_lists['q'] = sorted(helpers.SearchDirRecursively(data_dir_q,
-                config['vars'].q_pattern, nMaxDepth=config['vars'].q_depth))
-        else:
-            tif_lists['q'] = sorted(helpers.SearchDir(data_dir_q, config['vars'].q_pattern))
+        for res in ('10m', '20m', '60m'):
+            res_path = (data_dir / res)
+            if res_path.exists():
+                glob_files = res_path.glob(f"{'**/' if config['vars'].i_recursive else ''}{config['vars'].i_pattern}")
+                tif_lists[res] = sorted(list(glob_files))
+
+            else:
+            # if there are no resolution subdirs in the directory, assume that 10m data is directly there
+                if res == '10m':
+                    glob_files = data_dir.glob(f"{'**/' if config['vars'].i_recursive else ''}{config['vars'].i_pattern}")
+                    tif_lists[res] = sorted(list(glob_files))
+                else:
+                    tif_lists[res] = []
+        
+        return tif_lists
+
+    for index, row in geom_df.iterrows():
+        print({k: len(v) for k,v in get_image_files(config, row).items()})
+
+    
+    return
+    tif_lists = dict()
         
     # Get image input directory
     data_dir = oTab[config['vars'].attr_i_loc][iRow]

@@ -11,14 +11,14 @@ attr_q_loc = 'data_loc2' # location of quality raster files for the feature
 attr_i_loc = 'data_loc2' # location of image raster files for the feature
 
 # set quality raster file search options
-q_pattern = 'L2A*scl.tif'
+q_pattern = 'L2A*SCL.tif'
 q_recursive = False
-q_depth = 1
+q_depth = 1 # doesn't work anymore
 
 # set image raster file search options
 i_pattern = 'L2A*[0123456789].tif'
 i_recursive = False
-i_depth = 1
+i_depth = 1 # doesn't work anymore
 
 # set options for retrieving the image acquisition timestamp
 t_mode = 'filename' # possible values: metadata, filename
