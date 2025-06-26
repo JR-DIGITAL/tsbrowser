@@ -40,7 +40,7 @@ add_flag_labels = 'a b c d e f g h'.split()
 
 # set an output directory to store flag files (pickle format)
 # if None, write to the shapefile directory 
-flag_dir = '//digs110/fer/HR-VPP2/calibration/interpretation/stage1/flags_vij'
+flag_dir = '/home/jonas/Documents/Projects/2025/s2-timeseries-labeller/test/flags'
 
 # assign names to input bands
 layermap = {'B02': 1, 'B03': 2, 'B04': 3, 'B08': 4, 'B11': 9}

@@ -12,6 +12,7 @@ from pathlib import Path
 import pickle
 import sys
 import time
+import math
 
 sLibPath = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..'))
 if sLibPath not in sys.path:
@@ -28,6 +29,7 @@ import matplotlib.dates as mdates
 import matplotlib.patches as patches
 import rasterio
 from pyproj import Transformer
+import shapely
 import numpy as np
 import xarray as xr
 import rioxarray
@@ -213,6 +215,7 @@ def init_plots(args, ts, vhr_layer, ax):
             ax[key].set_ylim(lim[:2])
             ax[key].set_yticks(lim[2])
     for key, val in iter(config['vars'].images.items()):
+        # TODO: Apply contrast stretch here
         img = ts.GetRgbImage(0, val)
         handles[key] = ax[key].imshow(img)
         ax[key].xaxis.tick_top()
@@ -245,6 +248,40 @@ def add_patches(ax, Xpix10, Ypix10, oMapping10m, oMapping60m=None):
 def add_patch_vhr(ax, offset_line, offset_col):
     patch = patches.Rectangle((offset_line - 6, offset_col - 6), 12, 12, fill=False, ec='y')
     ax['img_VHR'].add_patch(patch)
+
+def load_stack(files: list[Path], times: list[datetime], point, config):
+    with rasterio.open(files[0], 'r') as tif:
+        transform = tif.transform
+        pixel_size_x = transform.a
+        pixel_size_y = -transform.e # negative because of raster orientation
+
+    # Convert projected coordinates to pixel indices
+    rows, cols = rasterio.transform.rowcol(transform, [point.x], [point.y])
+    row = rows[0]
+    col = cols[0]
+
+    half_width_px = config['vars'].chip_width / (2 * pixel_size_x)
+    half_height_px = config['vars'].chip_height / (2 * pixel_size_y)
+
+    chips = []
+    for tif_path in files:
+        da = rioxarray.open_rasterio(tif_path, mask_and_scale=True) #chunks="auto")
+        # Slice the chip
+        if not config['vars'].legacy_mode:
+            da = da.isel(
+                y=slice(math.ceil(row - half_height_px), math.floor(row + half_height_px)),
+                x=slice(math.ceil(col - half_width_px), math.floor(col + half_width_px))
+            )
+        chips.append(da)
+    # Combine along new "band" or "variable" dimension
+    chip_stack = xr.concat(chips, dim=pd.Index(times, name="time"))
+    # Set up temporal filter
+    start = pd.Timestamp(args.startdate) if args.startdate else None
+    end = pd.Timestamp(args.stopdate) if args.stopdate else None
+    chip_stack.sel(time=slice(start, end))
+    return chip_stack
+    
+        
 
 
 def main(args):
@@ -356,72 +393,28 @@ def main(args):
             if discarded_im:
                 print('Discarded image files: {}'.format(
                     ', '.join(map(lambda x: x.strftime('%Y-%m-%d'), sorted(discarded_im)))))
-                
+
+        # Fetch VHR data
+        # vhr_layers = asyncio.run(get_vhr(sample_series.geometry.y, sample_series.geometry.x, config['vars'].vhr_zoom, remove_duplicates=config['vars'].remove_duplicates))
+
         # Get target point geometry in raster data projection
         # TODO: Do that once outside the loop
         with rasterio.open(tif_lists['q'][0], 'r') as tif:
             target_crs = tif.crs
             bounds = tif.bounds
-            transform = tif.transform
-            pixel_size_x = transform.a
-            pixel_size_y = -transform.e # negative because of raster orientation
 
         transformer = Transformer.from_crs(geom_df.crs, target_crs, always_xy=True)
-        x_proj, y_proj = transformer.transform(sample_series.geometry.x, sample_series.geometry.y)
-        is_inside_bounds = (bounds.left <= x_proj <= bounds.right) and (bounds.bottom <= y_proj <= bounds.top)
+        point_reproj = shapely.transform(
+            sample_series.geometry,
+            transformer.transform, interleaved=False
+        )
+        is_inside_bounds = (bounds.left <= point_reproj.x <= bounds.right) and (bounds.bottom <= point_reproj.y <= bounds.top)
         if not is_inside_bounds:
             raise RuntimeError("Sample point outside of raster extent")
 
-        # Convert projected coordinates to pixel indices
-        rows, cols = rasterio.transform.rowcol(transform, [x_proj], [y_proj])
-        row = rows[0]
-        col = cols[0]
-
-        half_width_px = int(config['vars'].chip_width / (2 * pixel_size_x))
-        half_height_px = int(config['vars'].chip_height / (2 * pixel_size_y))
-
-        # Fetch VHR data
-        # vhr_layers = asyncio.run(get_vhr(sample_series.geometry.y, sample_series.geometry.x, config['vars'].vhr_zoom, remove_duplicates=config['vars'].remove_duplicates))
-
-        # Set up temporal filter    
-        selector = [True]*len(tif_lists['10m'])
-        if args.startdate or args.stopdate:
-            try:
-                start_date = datetime.strptime(args.startdate, '%Y%m%d')
-            except ValueError:
-                start_date = t_common[0]
-            try:
-                stop_date = datetime.strptime(args.stopdate, '%Y%m%d')
-            except ValueError:
-                stop_date = t_common[-1] + timedelta(1)
-            for k, target_date in enumerate(t_common):
-                selector[k] = target_date >= start_date and target_date < stop_date
-            tmp = list(compress(tif_lists['10m'], selector))
-            tif_lists['10m'] = tmp
-
-        # Determine the subset for data extraction
-        # TODO Check what we actually need from rioxarray to spatially subset
-        if config['vars'].legacy_mode:
-            oSubset = None
-        else:
-            chips = []
-            # create rasterio window here
-            # and read everything in tif_lists['q']
-            # Convert chip size from meters to pixels
-            # Loop through all rasters
-            for tif_path in tif_lists['q']:
-                da = rioxarray.open_rasterio(tif_path, mask_and_scale=True) #chunks="auto")
-                # Slice the chip
-                chip = da.isel(
-                    y=slice(row - half_height_px, row + half_height_px),
-                    x=slice(col - half_width_px, col + half_width_px)
-                )
-                chips.append(chip)
-            # Combine along new "band" or "variable" dimension
-            chip_stack = xr.concat(chips, dim=pd.Index(t_common, name="time")) # or create custom name
-            
-        # do that already in the beginning
-        selected_band = chip_stack.sel(band=config['vars'].q_band)
+        q_stack = load_stack(tif_lists['q'], t_common, point_reproj, config)
+        # TODO: Do band subset in load_stack
+        selected_band = q_stack.sel(band=config['vars'].q_band)
         if config['vars'].q_mode == 'oqb':
             ts_q_bin = selected_band < config['vars'].threshold
         elif config['vars'].q_mode == 'score':
@@ -429,61 +422,64 @@ def main(args):
         elif config['vars'].q_mode == 'scl':
             ts_q_bin = ~selected_band.isin(config['vars'].masking_classes)
         overall_assessment = ts_q_bin.mean(dim=["x", "y"])
-        row_slice = slice(half_height_px - config['vars'].specific_radius,
-            half_height_px + config['vars'].specific_radius + 1)
-        col_slice = slice(half_width_px - config['vars'].specific_radius,
-            half_width_px + config['vars'].specific_radius + 1)
+        row_slice = slice(len(q_stack.y)//2 - config['vars'].specific_radius,
+            len(q_stack.y)//2 + config['vars'].specific_radius + 1)
+        col_slice = slice(len(q_stack.x)//2 - config['vars'].specific_radius,
+            len(q_stack.x)//2 + config['vars'].specific_radius + 1)
         specific_assessment = ts_q_bin.isel(y=row_slice, x=col_slice).mean(dim=["x", "y"]) >= config['vars'].specific_valid_ratio
         selector = np.logical_and(overall_assessment, specific_assessment).values
 
-        return tif_lists
+        ts = load_stack(
+            list(compress(tif_lists['10m'], selector)), 
+            list(compress(t_common, selector)), 
+            point_reproj,
+            config
+        )
 
+        # Get 60m geotransform
+        oMapping60m = None
+        if tif_lists['60m']:
+            oMapping60m = load_stack(
+                list(compress(tif_lists['10m'], selector)), 
+                list(compress(t_common, selector)), 
+                point_reproj,
+                config
+            )
+
+        return {sample_series[config['vars'].attr_id]: (ts, oMapping60m)}
+
+    data = []
     for index, row in geom_df.iterrows():
-        print({k: len(v) for k,v in get_image_files(config, row).items()})
+        data.append(get_image_files(config, row).items())
 
-    # Load 10m data
-    # breakpoint()
-    ts = arrayio.Read(list(compress(tif_lists['10m'], selector)), config['vars'].layermap,
-        sDataType='float', oSubset=oSubset, bProjected=True, oDateTimeRetriever=RetrieveTimestamp,
-        bApplyZScales=config['vars'].apply_metadata_zscale)
-    ts.Scale(config['vars'].zscale)
-    # if config['vars'].legacy_mode:
-    float_pixel, float_line = ts.oMapping.Backward(oTargetPoint.GetX(), oTargetPoint.GetY())
-    args.pixel = int(round(float_pixel))
-    args.line = int(round(float_line))
-    print('\n--> Displaying pixel/line time series {}/{}'.format(args.pixel, args.line))
-    print('')
-    for key, val in iter(config['vars'].contrast.items()):
-        if isinstance(val, tuple):
-            lower, upper = val
-        elif val == 'mean_stddev':
-            mean = getattr(ts, key).mean()
-            std = getattr(ts, key).std()
-            N = config['vars'].std_factor
-            lower = mean - N*std
-            upper = mean + N*std
-        elif val == 'median_mad':
-            med = np.ma.median(getattr(ts, key))
-            mad = np.ma.median(np.ma.fabs(getattr(ts, key) - med))
-            s = mad/.6745
-            N = config['vars'].std_factor
-            lower = med - N*s
-            upper = med + N*s
-        elif val == 'pct_clip':
-            lower = np.nanpercentile(getattr(ts, key).filled(np.nan), config['vars'].pct_min,
-                method='lower')
-            upper = np.nanpercentile(getattr(ts, key).filled(np.nan), config['vars'].pct_max,
-                method='higher')
-        else:
-            raise RuntimeError('invalid contrast stretch parameter "{}"'.format(val))
-        print('{} contrast min {:.2f} max {:.2f}'.format(key, lower, upper))
-        ts.SetContrastSrcRange(key, lower, upper)
+    # TODO: Move this logic to init_plots
+    # for key, val in iter(config['vars'].contrast.items()):
+    #     if isinstance(val, tuple):
+    #         lower, upper = val
+    #     elif val == 'mean_stddev':
+    #         mean = getattr(ts, key).mean()
+    #         std = getattr(ts, key).std()
+    #         N = config['vars'].std_factor
+    #         lower = mean - N*std
+    #         upper = mean + N*std
+    #     elif val == 'median_mad':
+    #         med = np.ma.median(getattr(ts, key))
+    #         mad = np.ma.median(np.ma.fabs(getattr(ts, key) - med))
+    #         s = mad/.6745
+    #         N = config['vars'].std_factor
+    #         lower = med - N*s
+    #         upper = med + N*s
+    #     elif val == 'pct_clip':
+    #         lower = np.nanpercentile(getattr(ts, key).filled(np.nan), config['vars'].pct_min,
+    #             method='lower')
+    #         upper = np.nanpercentile(getattr(ts, key).filled(np.nan), config['vars'].pct_max,
+    #             method='higher')
+    #     else:
+    #         raise RuntimeError('invalid contrast stretch parameter "{}"'.format(val))
+    #     print('{} contrast min {:.2f} max {:.2f}'.format(key, lower, upper))
+    #     ts.SetContrastSrcRange(key, lower, upper)
 
-    # Get 60m geotransform
-    oMapping60m = None
-    if tif_lists['60m']:
-        oRasterInfo = helpers.GetRasterInfo(tif_lists['60m'][0])
-        oMapping60m = oRasterInfo.mapping
+
 
     # Load possibly existing flag values
     if config['vars'].flag_dir is None:
@@ -521,6 +517,9 @@ def main(args):
     # ****** PAUSE BLOCK END ******
 
     # Now set up figure
+    # TODO: Proper data handling
+    sample_data = data[0]
+
     plt.ion()
     fig, ax = setup_figure(args)
     handles = init_plots(args, ts, vhr_layers[0], ax)
