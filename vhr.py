@@ -15,12 +15,12 @@ from PIL import Image
 class WaybackLayer(TypedDict):
     identifier: str
     layer_number: int
-    publish_date: str # formatted YYYY-MM-DD
+    publish_date: str  # formatted YYYY-MM-DD
 
 
 class WaybackImageLayer(WaybackLayer):
     image: Image.Image
-    approximate_acquisition_date: str # formatted YYYY-MM-DD
+    approximate_acquisition_date: str  # formatted YYYY-MM-DD
     point_pixel_offset_xy: Tuple[float, float]
 
 
@@ -232,19 +232,30 @@ async def get_acquisition_date(
         data = await response.json(content_type=None)
         try:
             epoch = data["features"][0]["attributes"]["SRC_DATE2"]
-            publish_date = datetime.fromtimestamp(epoch / 1000)  # from ms to s since epoch
-            publish_date_str = publish_date.strftime('%Y-%m-%d')
+            publish_date = datetime.fromtimestamp(
+                epoch / 1000
+            )  # from ms to s since epoch
+            publish_date_str = publish_date.strftime("%Y-%m-%d")
         except IndexError:
-            publish_date_str = 'unknown'
+            publish_date_str = "unknown"
     return publish_date_str
 
 
-async def get_vhr(lat, lon, zoom, start, start_date: str = '1900-01-01', remove_duplicates: bool = False):
-    # temporary shim without network calls 
+async def get_vhr(
+    lat,
+    lon,
+    zoom,
+    start,
+    start_date: str = "1900-01-01",
+    remove_duplicates: bool = False,
+):
+    # temporary shim without network calls
     import pickle
+
     with open("test/vhr_example.pickle", "rb") as f:
         vhr_data = pickle.load(f)
     return vhr_data
+
 
 # async def get_vhr(lat: float, lon: float, zoom: int, start_date: str = '1900-01-01', remove_duplicates: bool = False) -> list[WaybackImageLayer]:
 #     number_tiles = 3
@@ -275,10 +286,10 @@ async def get_vhr(lat, lon, zoom, start, start_date: str = '1900-01-01', remove_
 #             if acquisition_date < start_date:
 #                 continue
 #             if (acquisition_date in unique_acquisitions) and remove_duplicates:
-#                 continue   
+#                 continue
 #             unique_acquisitions.add(acquisition_date)
 #             acquisitions_layers.append((acquisition_date, layer))
-        
+
 
 #         for _, layer in acquisitions_layers:
 #             # Build the URL template for this layer.
