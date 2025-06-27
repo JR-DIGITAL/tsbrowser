@@ -53,7 +53,7 @@ class UiEventHandler:
     def __init__(self, args, ts, vhr_layers, ax, handles):
         self.args = args
         self.geoarray = ts
-        self.t = mdates.date2num(ts.lSensingTimes)
+        self.t = mdates.date2num(ts.time)
         self.vhr_layers = vhr_layers
         self.vhr_ann_top = None
         self.vhr_ann_bottom = None
@@ -63,8 +63,9 @@ class UiEventHandler:
         self.i_vhr = len(vhr_layers) - 1
         self.flags = dict()
         self.flag_val = dict()
-        for key, val in iter(config["vars"].timeseries.items()):
-            y = ts.aArray[:, ts.lBandNames.index(val), args.line, args.pixel]
+        for key, band_name in iter(config["vars"].timeseries.items()):
+            layer_index = config["vars"].layermap[band_name]
+            y = ts.sel(band=layer_index).isel(x=len(ts.x)//2, y=len(ts.x)//2)
             setattr(self, key, y.data)
 
     def on_pick(self, event):
@@ -111,7 +112,10 @@ class UiEventHandler:
             if key.startswith("ts"):
                 val.set_data([self.t[i]], [getattr(self, key).data[i]])
             elif key[4] in ("L", "R"):
-                val.set_data(self.geoarray.GetRgbImage(i, config["vars"].images[key]))
+                acquisition = self.geoarray.isel(time=i)
+                band_indices = [config["vars"].layermap[band] for band in config["vars"].images[key]]
+                img = acquisition.sel(band=band_indices) / 2000   
+                val.set_data(img.transpose('y','x','band').values)
         self.i = i
 
     def update_vhr(self, i=0):
@@ -211,37 +215,43 @@ def setup_figure(args):
 
 def init_plots(args, ts, vhr_layer, ax):
     handles = dict()
-    for key, val in iter(config["vars"].timeseries.items()):
-        y = ts.aArray[:, ts.lBandNames.index(val), args.line, args.pixel]
-        ax[key].plot(ts.lSensingTimes, y, "o", picker=5)
-        handles[key] = ax[key].plot(
-            ts.lSensingTimes[0], y[0], "o", fillstyle="none", markeredgewidth=2
+    for ax_name, band_name in iter(config["vars"].timeseries.items()):
+        # point timeseries is the point in the middle of the image (floored)
+        layer_index = config["vars"].layermap[band_name]
+        y = ts.sel(band=layer_index).isel(x=len(ts.x)//2, y=len(ts.x)//2)
+        ax[ax_name].plot(ts.time, y, "o", picker=5)
+        handles[ax_name] = ax[ax_name].plot(
+            ts.time[0], y[0], "o", fillstyle="none", markeredgewidth=2
         )[0]
         if args.semilogy:
-            ax[key].set_yscale("log")
-        else:
-            if config["vars"].ylim[0] == "auto":
-                ymin = y.min().item()
-            else:
-                ymin = config["vars"].ylim[0]
-            if config["vars"].ylim[1] == "auto":
-                ymax = y.max().item()
-            else:
-                ymin = config["vars"].ylim[1]
-            lim = helpers.compute_axis_limits(
-                ymin,
-                ymax,
-                6,
-                upper_padding=0,
-                round_to_multiples_of=config["vars"].ytick_multiples,
-            )
-            ax[key].set_ylim(lim[:2])
-            ax[key].set_yticks(lim[2])
-    for key, val in iter(config["vars"].images.items()):
+            ax[ax_name].set_yscale("log")
+        # TODO: move helper function into codebase to enable this
+        # else:
+        #     if config["vars"].ylim[0] == "auto":
+        #         ymin = y.min().item()
+        #     else:
+        #         ymin = config["vars"].ylim[0]
+        #     if config["vars"].ylim[1] == "auto":
+        #         ymax = y.max().item()
+        #     else:
+        #         ymin = config["vars"].ylim[1]
+        #     lim = helpers.compute_axis_limits(
+        #         ymin,
+        #         ymax,
+        #         6,
+        #         upper_padding=0,
+        #         round_to_multiples_of=config["vars"].ytick_multiples,
+        #     )
+        #     ax[ax_name].set_ylim(lim[:2])
+        #     ax[ax_name].set_yticks(lim[2])
+    # get first acquisition in the timeseries
+    first_acquisition = ts.isel(time=0)
+    for axis_name, band_combination in iter(config["vars"].images.items()):
         # TODO: Apply contrast stretch here
-        img = ts.GetRgbImage(0, val)
-        handles[key] = ax[key].imshow(img)
-        ax[key].xaxis.tick_top()
+        band_indices = [config["vars"].layermap[band] for band in band_combination]
+        img = first_acquisition.sel(band=band_indices) / 2000
+        handles[axis_name] = ax[axis_name].imshow(img.transpose('y','x','band'))
+        ax[axis_name].xaxis.tick_top()
     handles["img_VHR"] = ax["img_VHR"].imshow(vhr_layer["image"])
     ax["img_VHR"].xaxis.tick_top()
     ax["img_VHR"].yaxis.tick_right()
@@ -250,28 +260,28 @@ def init_plots(args, ts, vhr_layer, ax):
     return handles
 
 
-def add_patches(ax, Xpix10, Ypix10, oMapping10m, oMapping60m=None):
-    #    breakpoint()
-    Xgeo10, Ygeo10 = oMapping10m.Forward(Xpix10, Ypix10)
-    if oMapping60m is not None:
-        Xpix60, Ypix60 = map(round, oMapping60m.Backward(Xgeo10, Ygeo10))
-        Xgeo60, Ygeo60 = oMapping60m.Forward(Xpix60, Ypix60)
-        Xpix60, Ypix60 = map(round, oMapping10m.Backward(Xgeo60 - 25, Ygeo60 + 25))
+def add_patches(ax, row, col, oMapping60m=None):
+    #  I think mapping == affine transform?
+    # TODO handle 60m
+    # if oMapping60m is not None:
+        # Xpix60, Ypix60 = map(round, oMapping60m.Backward(Xgeo10, Ygeo10))
+        # Xgeo60, Ygeo60 = oMapping60m.Forward(Xpix60, Ypix60)
+        # Xpix60, Ypix60 = map(round, oMapping10m.Backward(Xgeo60 - 25, Ygeo60 + 25))
     for key, val in iter(config["vars"].images.items()):
         if oMapping60m is None:
             patch10 = patches.Rectangle(
-                (Xpix10 - 1.5, Ypix10 - 1.5), 3, 3, fill=False, ec="y"
+                (row - 1.5, col - 1.5), 3, 3, fill=False, ec="y"
             )
             ax[key].add_patch(patch10)
-        else:
-            patch10 = patches.Rectangle(
-                (Xpix10 - 0.5, Ypix10 - 0.5), 1, 1, fill=False, ec="y"
-            )
-            patch60 = patches.Rectangle(
-                (Xpix60 - 0.5, Ypix60 - 0.5), 6, 6, fill=False, ec="y"
-            )
-            ax[key].add_patch(patch10)
-            ax[key].add_patch(patch60)
+        # else:
+        #     patch10 = patches.Rectangle(
+        #         (row - 0.5, col - 0.5), 1, 1, fill=False, ec="y"
+        #     )
+        #     patch60 = patches.Rectangle(
+        #         (Xpix60 - 0.5, Ypix60 - 0.5), 6, 6, fill=False, ec="y"
+        #     )
+        #     ax[key].add_patch(patch10)
+        #     ax[key].add_patch(patch60)
 
 
 def add_patch_vhr(ax, offset_line, offset_col):
@@ -445,16 +455,6 @@ def main(args):
                     )
                 )
 
-        # Fetch VHR data
-        vhr_layers = asyncio.run(
-            get_vhr(
-                sample_series.geometry.y,
-                sample_series.geometry.x,
-                config["vars"].vhr_zoom,
-                remove_duplicates=config["vars"].remove_duplicates,
-            )
-        )
-
         # Get target point geometry in raster data projection
         # TODO: Do that once outside the loop
         with rasterio.open(tif_lists["q"][0], "r") as tif:
@@ -502,6 +502,10 @@ def main(args):
             config,
         )
 
+        # select appropriate bands
+        selected_bands = list(config["vars"].layermap.values())
+        ts = ts.sel(band=selected_bands)
+
         # Get 60m geotransform
         oMapping60m = None
         if tif_lists["60m"]:
@@ -512,11 +516,24 @@ def main(args):
                 config,
             )
 
-        return (sample_series[config["vars"].attr_id], {10: ts, 60: oMapping60m}))
+        # Fetch VHR data
+        vhr_layers = asyncio.run(
+            get_vhr(
+                sample_series.geometry.y,
+                sample_series.geometry.x,
+                config["vars"].vhr_zoom,
+                remove_duplicates=config["vars"].remove_duplicates,
+            )
+        )
+
+        return (
+            sample_series[config["vars"].attr_id], 
+            {10: ts, 60: oMapping60m, "vhr": vhr_layers}
+        )
 
     data = []
     for index, row in geom_df.iterrows():
-        data.append(get_image_files(config, row).items())
+        data.append(get_image_files(config, row))
 
     # TODO: Move this visualization logic to init_plots
     # for key, val in iter(config['vars'].contrast.items()):
@@ -575,12 +592,20 @@ def main(args):
 
     # Now set up figure
     # TODO: Proper data handling
-    sample_data = data[0]
+    # TODO pass object to next functions
+    sample_id, img_data = data[0]
+    ts = img_data[10]
+    oMapping60m = img_data[60]
+    vhr_layers = img_data["vhr"]
 
     plt.ion()
+    # row, col of sample in image (might need to be done better)
+    # right now it is just assumed to be in the middle of the image
+    row = len(ts.y) // 2
+    col = len(ts.x) // 2
     fig, ax = setup_figure(args)
     handles = init_plots(args, ts, vhr_layers[0], ax)
-    add_patches(ax, args.pixel, args.line, ts.oMapping, oMapping60m)
+    add_patches(ax, row, col)
     add_patch_vhr(ax, *vhr_layers[0]["point_pixel_offset_xy"])
     EventHandler = UiEventHandler(args, ts, vhr_layers, ax, handles)
     if flag_val is not None:

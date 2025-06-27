@@ -245,7 +245,6 @@ async def get_vhr(
     lat,
     lon,
     zoom,
-    start,
     start_date: str = "1900-01-01",
     remove_duplicates: bool = False,
 ):
