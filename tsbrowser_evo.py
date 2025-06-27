@@ -395,7 +395,7 @@ def main(args):
                     ', '.join(map(lambda x: x.strftime('%Y-%m-%d'), sorted(discarded_im)))))
 
         # Fetch VHR data
-        # vhr_layers = asyncio.run(get_vhr(sample_series.geometry.y, sample_series.geometry.x, config['vars'].vhr_zoom, remove_duplicates=config['vars'].remove_duplicates))
+        vhr_layers = asyncio.run(get_vhr(sample_series.geometry.y, sample_series.geometry.x, config['vars'].vhr_zoom, remove_duplicates=config['vars'].remove_duplicates))
 
         # Get target point geometry in raster data projection
         # TODO: Do that once outside the loop
@@ -452,7 +452,7 @@ def main(args):
     for index, row in geom_df.iterrows():
         data.append(get_image_files(config, row).items())
 
-    # TODO: Move this logic to init_plots
+    # TODO: Move this visualization logic to init_plots
     # for key, val in iter(config['vars'].contrast.items()):
     #     if isinstance(val, tuple):
     #         lower, upper = val
