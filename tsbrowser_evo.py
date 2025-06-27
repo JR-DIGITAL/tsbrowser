@@ -112,10 +112,12 @@ class UiEventHandler:
             if key.startswith("ts"):
                 val.set_data([self.t[i]], [getattr(self, key).data[i]])
             elif key[4] in ("L", "R"):
-                acquisition = self.geoarray.isel(time=i)
-                band_indices = [config["vars"].layermap[band] for band in config["vars"].images[key]]
-                img = acquisition.sel(band=band_indices) / 2000   
-                val.set_data(img.transpose('y','x','band').values)
+                img = prepare_rgb(
+                    self.geoarray.isel(time=i), 
+                    config["vars"].images[key],
+                    self.args.vis
+                )
+                val.set_data(img)
         self.i = i
 
     def update_vhr(self, i=0):
@@ -247,10 +249,12 @@ def init_plots(args, ts, vhr_layer, ax):
     # get first acquisition in the timeseries
     first_acquisition = ts.isel(time=0)
     for axis_name, band_combination in iter(config["vars"].images.items()):
-        # TODO: Apply contrast stretch here
-        band_indices = [config["vars"].layermap[band] for band in band_combination]
-        img = first_acquisition.sel(band=band_indices) / 2000
-        handles[axis_name] = ax[axis_name].imshow(img.transpose('y','x','band'))
+        img = prepare_rgb(
+            first_acquisition, 
+            band_combination,
+            args.vis
+        )
+        handles[axis_name] = ax[axis_name].imshow(img)
         ax[axis_name].xaxis.tick_top()
     handles["img_VHR"] = ax["img_VHR"].imshow(vhr_layer["image"])
     ax["img_VHR"].xaxis.tick_top()
@@ -327,6 +331,13 @@ def load_stack(files: list[Path], times: list[datetime], point, config):
     chip_stack.sel(time=slice(start, end))
     return chip_stack
 
+def prepare_rgb(ds, bands, vis):
+    band_indices = [config["vars"].layermap[band] for band in bands]
+    lower_arr = np.array([vis[band][0] for band in bands])
+    upper_arr = np.array([vis[band][1] for band in bands])
+    img = (ds.sel(band=band_indices).transpose('y','x','band') - lower_arr) / upper_arr
+    out_img = img.clip(0, 1).values
+    return out_img
 
 def main(args):
     # Load config variables
@@ -535,32 +546,34 @@ def main(args):
     for index, row in geom_df.iterrows():
         data.append(get_image_files(config, row))
 
-    # TODO: Move this visualization logic to init_plots
-    # for key, val in iter(config['vars'].contrast.items()):
-    #     if isinstance(val, tuple):
-    #         lower, upper = val
-    #     elif val == 'mean_stddev':
-    #         mean = getattr(ts, key).mean()
-    #         std = getattr(ts, key).std()
-    #         N = config['vars'].std_factor
-    #         lower = mean - N*std
-    #         upper = mean + N*std
-    #     elif val == 'median_mad':
-    #         med = np.ma.median(getattr(ts, key))
-    #         mad = np.ma.median(np.ma.fabs(getattr(ts, key) - med))
-    #         s = mad/.6745
-    #         N = config['vars'].std_factor
-    #         lower = med - N*s
-    #         upper = med + N*s
-    #     elif val == 'pct_clip':
-    #         lower = np.nanpercentile(getattr(ts, key).filled(np.nan), config['vars'].pct_min,
-    #             method='lower')
-    #         upper = np.nanpercentile(getattr(ts, key).filled(np.nan), config['vars'].pct_max,
-    #             method='higher')
-    #     else:
-    #         raise RuntimeError('invalid contrast stretch parameter "{}"'.format(val))
-    #     print('{} contrast min {:.2f} max {:.2f}'.format(key, lower, upper))
-    #     ts.SetContrastSrcRange(key, lower, upper)
+    # Calculate/set vis bounds
+    args.vis = {}
+    for band_name, val in iter(config['vars'].contrast.items()):
+        band_index = config["vars"].layermap[band_name]
+        if isinstance(val, tuple):
+            lower, upper = val
+        elif val == 'mean_stddev':
+            mean = ts.sel(band=band_index).mean()
+            std = ts.sel(band=band_index).std()
+            N = config['vars'].std_factor
+            lower = mean - N*std
+            upper = mean + N*std
+        elif val == 'median_mad':
+            med = np.ma.median(ts.sel(band=band_index))
+            mad = np.ma.median(np.ma.fabs(ts.sel(band=band_index) - med))
+            s = mad/.6745
+            N = config['vars'].std_factor
+            lower = med - N*s
+            upper = med + N*s
+        elif val == 'pct_clip':
+            lower = np.nanpercentile(ts.sel(band=band_index).filled(np.nan), config['vars'].pct_min,
+                method='lower')
+            upper = np.nanpercentile(ts.sel(band=band_index).filled(np.nan), config['vars'].pct_max,
+                method='higher')
+        else:
+            raise RuntimeError('invalid contrast stretch parameter "{}"'.format(val))
+        print('{} contrast min {:.2f} max {:.2f}'.format(band_name, lower, upper))
+        args.vis[band_name] = (lower, upper)
 
     # Load possibly existing flag values
     if config["vars"].flag_dir is None:
