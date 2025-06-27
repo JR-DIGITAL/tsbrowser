@@ -573,16 +573,6 @@ def main(args):
     if flags_not_shown:
         print("\nFlags not shown: {}\n".format(", ".join(flags_not_shown)))
 
-    # ****** PAUSE BLOCK START ******
-    if args.pause:
-        print(
-            f"Pausing before interactive session. Waiting until file '{args.pause_file}' is removed..."
-        )
-        while os.path.exists(args.pause_file):
-            time.sleep(0.5)
-        print("Release signal received. Starting interactive session.")
-    # ****** PAUSE BLOCK END ******
-
     # Now set up figure
     # TODO: Proper data handling
     sample_data = data[0]
