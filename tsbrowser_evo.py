@@ -1,18 +1,16 @@
 #!/usr/bin/env PythonInterpreter
-# -*- coding: utf-8 -*-
 
 import argparse
 import asyncio
-from datetime import datetime, timedelta
-from functools import partial
 import importlib
-from itertools import compress
+import math
 import os
-from pathlib import Path
 import pickle
 import sys
 import time
-import math
+from datetime import datetime
+from itertools import compress
+from pathlib import Path
 
 sLibPath = os.path.abspath(
     os.path.join(os.path.dirname(os.path.realpath(__file__)), "..")
@@ -21,21 +19,19 @@ if sLibPath not in sys.path:
     sys.path.append(sLibPath)
     sys.path.append(os.path.abspath(os.path.join(sLibPath, "..", "individual", "vij")))
 
-from vhr import get_vhr
-
-import pandas as pd
 import geopandas as gpd
-
-import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import matplotlib.patches as patches
-import rasterio
-from pyproj import Transformer
-import shapely
+import matplotlib.pyplot as plt
 import numpy as np
-import xarray as xr
+import pandas as pd
+import rasterio
 import rioxarray
+import shapely
+import xarray as xr
+from pyproj import Transformer
 
+from vhr import get_vhr
 
 prompt = "--> "
 flag_labels = set(map(str, range(10)))
@@ -79,7 +75,7 @@ class UiEventHandler:
             elif event.mouseevent.button == 1:
                 self.update(i)
         except ValueError:
-            print("Error: more than one entity picked\n{}".format(prompt), end="")
+            print(f"Error: more than one entity picked\n{prompt}", end="")
 
     def on_key(self, event):
         try:
@@ -174,18 +170,16 @@ class UiEventHandler:
     def limit_i(self, i):
         if i < 0:
             return self.t.size - 1
-        elif i >= self.t.size:
+        if i >= self.t.size:
             return 0
-        else:
-            return i
+        return i
 
     def limit_i_vhr(self, i):
         if i < 0:
             return len(self.vhr_layers) - 1
-        elif i >= len(self.vhr_layers):
+        if i >= len(self.vhr_layers):
             return 0
-        else:
-            return i
+        return i
 
     def set_flags(self, flag_val):
         for i, label in iter(flag_val.items()):
@@ -518,7 +512,7 @@ def main(args):
                 config,
             )
 
-        return {sample_series[config["vars"].attr_id]: (ts, oMapping60m)}
+        return (sample_series[config["vars"].attr_id], {10: ts, 60: oMapping60m}))
 
     data = []
     for index, row in geom_df.iterrows():
@@ -559,7 +553,7 @@ def main(args):
             flag_dir = config["vars"].flag_dir
         else:
             raise RuntimeError("Output directory for flag files does not exist")
-    flags_file_path = os.path.join(flag_dir, "flags_{}.pickle".format(args.pid))
+    flags_file_path = os.path.join(flag_dir, f"flags_{args.pid}.pickle")
     if os.path.exists(flags_file_path):
         with open(flags_file_path, "rb") as flags_file:
             flag_val_datetime = pickle.load(flags_file)
@@ -567,10 +561,11 @@ def main(args):
         flags_not_shown = []
         for date_time, val in flag_val_datetime.items():
             try:
+                # TODO figure out what is going on here
                 flag_index = ts.lSensingTimes.index(date_time)
                 flag_val[flag_index] = val
             except ValueError:
-                flags_not_shown.append("{:%Y-%m-%d %H:%M:%S}".format(date_time))
+                flags_not_shown.append(f"{date_time:%Y-%m-%d %H:%M:%S}")
     else:
         flag_val = None
         flag_val_datetime = dict()
