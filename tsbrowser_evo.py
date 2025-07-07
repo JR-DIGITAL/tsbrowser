@@ -61,14 +61,11 @@ class UiEventHandler:
             setattr(self, key, y.data)
 
     def on_pick(self, event):
-        try:
-            i = event.ind.item()
-            if event.mouseevent.button == 3:
-                self.toggle_flag_state(i, config["vars"].default_flag_label)
-            elif event.mouseevent.button == 1:
-                self.update(i)
-        except ValueError:
-            print(f"Error: more than one entity picked\n{prompt}", end="")
+        i = event.ind.item(len(event.ind)//2)
+        if event.mouseevent.button == 3:
+            self.toggle_flag_state(i, config["vars"].default_flag_label)
+        elif event.mouseevent.button == 1:
+            self.update(i)
 
     def on_key(self, event):
         try:
