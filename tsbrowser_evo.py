@@ -5,9 +5,8 @@ import asyncio
 import importlib
 import math
 import os
-import pickle
+import json
 import sys
-import time
 from datetime import datetime
 from itertools import compress
 from pathlib import Path
@@ -57,11 +56,11 @@ class UiEventHandler:
         self.flag_val = dict()
         for key, band_name in iter(config["vars"].timeseries.items()):
             layer_index = config["vars"].layermap[band_name]
-            y = ts.sel(band=layer_index).isel(x=len(ts.x)//2, y=len(ts.x)//2)
+            y = ts.sel(band=layer_index).isel(x=len(ts.x) // 2, y=len(ts.x) // 2)
             setattr(self, key, y.data)
 
     def on_pick(self, event):
-        i = event.ind.item(len(event.ind)//2)
+        i = event.ind.item(len(event.ind) // 2)
         if event.mouseevent.button == 3:
             self.toggle_flag_state(i, config["vars"].default_flag_label)
         elif event.mouseevent.button == 1:
@@ -102,9 +101,9 @@ class UiEventHandler:
                 val.set_data([self.t[i]], [getattr(self, key).data[i]])
             elif key[4] in ("L", "R"):
                 img = prepare_rgb(
-                    self.geoarray.isel(time=i), 
+                    self.geoarray.isel(time=i),
                     config["vars"].images[key],
-                    self.args.vis
+                    self.args.vis,
                 )
                 val.set_data(img)
         self.i = i
@@ -209,7 +208,7 @@ def init_plots(args, ts, vhr_layer, ax):
     for ax_name, band_name in iter(config["vars"].timeseries.items()):
         # point timeseries is the point in the middle of the image (floored)
         layer_index = config["vars"].layermap[band_name]
-        y = ts.sel(band=layer_index).isel(x=len(ts.x)//2, y=len(ts.x)//2)
+        y = ts.sel(band=layer_index).isel(x=len(ts.x) // 2, y=len(ts.x) // 2)
         ax[ax_name].plot(ts.time, y, "o", picker=5)
         handles[ax_name] = ax[ax_name].plot(
             ts.time[0], y[0], "o", fillstyle="none", markeredgewidth=2
@@ -238,11 +237,7 @@ def init_plots(args, ts, vhr_layer, ax):
     # get first acquisition in the timeseries
     first_acquisition = ts.isel(time=0)
     for axis_name, band_combination in iter(config["vars"].images.items()):
-        img = prepare_rgb(
-            first_acquisition, 
-            band_combination,
-            args.vis
-        )
+        img = prepare_rgb(first_acquisition, band_combination, args.vis)
         handles[axis_name] = ax[axis_name].imshow(img)
         ax[axis_name].xaxis.tick_top()
     handles["img_VHR"] = ax["img_VHR"].imshow(vhr_layer["image"])
@@ -257,9 +252,9 @@ def add_patches(ax, row, col, oMapping60m=None):
     #  I think mapping == affine transform?
     # TODO handle 60m
     # if oMapping60m is not None:
-        # Xpix60, Ypix60 = map(round, oMapping60m.Backward(Xgeo10, Ygeo10))
-        # Xgeo60, Ygeo60 = oMapping60m.Forward(Xpix60, Ypix60)
-        # Xpix60, Ypix60 = map(round, oMapping10m.Backward(Xgeo60 - 25, Ygeo60 + 25))
+    # Xpix60, Ypix60 = map(round, oMapping60m.Backward(Xgeo10, Ygeo10))
+    # Xgeo60, Ygeo60 = oMapping60m.Forward(Xpix60, Ypix60)
+    # Xpix60, Ypix60 = map(round, oMapping10m.Backward(Xgeo60 - 25, Ygeo60 + 25))
     for key, val in iter(config["vars"].images.items()):
         if oMapping60m is None:
             patch10 = patches.Rectangle(
@@ -320,13 +315,17 @@ def load_stack(files: list[Path], times: list[datetime], point, config):
     chip_stack.sel(time=slice(start, end))
     return chip_stack
 
+
 def prepare_rgb(ds, bands, vis):
     band_indices = [config["vars"].layermap[band] for band in bands]
     lower_arr = np.array([vis[band][0] for band in bands])
     upper_arr = np.array([vis[band][1] for band in bands])
-    img = (ds.sel(band=band_indices).transpose('y','x','band') - lower_arr) / upper_arr
+    img = (
+        ds.sel(band=band_indices).transpose("y", "x", "band") - lower_arr
+    ) / upper_arr
     out_img = img.clip(0, 1).values
     return out_img
+
 
 def main(args):
     # Load config variables
@@ -527,8 +526,8 @@ def main(args):
         )
 
         return (
-            sample_series[config["vars"].attr_id], 
-            {10: ts, 60: oMapping60m, "vhr": vhr_layers}
+            sample_series[config["vars"].attr_id],
+            {10: ts, 60: oMapping60m, "vhr": vhr_layers},
         )
 
     data = []
@@ -537,32 +536,46 @@ def main(args):
 
     # Calculate/set vis bounds
     args.vis = {}
-    for band_name, val in iter(config['vars'].contrast.items()):
+    for band_name, val in iter(config["vars"].contrast.items()):
         band_index = config["vars"].layermap[band_name]
         if isinstance(val, tuple):
             lower, upper = val
-        elif val == 'mean_stddev':
+        elif val == "mean_stddev":
             mean = ts.sel(band=band_index).mean()
             std = ts.sel(band=band_index).std()
-            N = config['vars'].std_factor
-            lower = mean - N*std
-            upper = mean + N*std
-        elif val == 'median_mad':
+            N = config["vars"].std_factor
+            lower = mean - N * std
+            upper = mean + N * std
+        elif val == "median_mad":
             med = np.ma.median(ts.sel(band=band_index))
             mad = np.ma.median(np.ma.fabs(ts.sel(band=band_index) - med))
-            s = mad/.6745
-            N = config['vars'].std_factor
-            lower = med - N*s
-            upper = med + N*s
-        elif val == 'pct_clip':
-            lower = np.nanpercentile(ts.sel(band=band_index).filled(np.nan), config['vars'].pct_min,
-                method='lower')
-            upper = np.nanpercentile(ts.sel(band=band_index).filled(np.nan), config['vars'].pct_max,
-                method='higher')
+            s = mad / 0.6745
+            N = config["vars"].std_factor
+            lower = med - N * s
+            upper = med + N * s
+        elif val == "pct_clip":
+            lower = np.nanpercentile(
+                ts.sel(band=band_index).filled(np.nan),
+                config["vars"].pct_min,
+                method="lower",
+            )
+            upper = np.nanpercentile(
+                ts.sel(band=band_index).filled(np.nan),
+                config["vars"].pct_max,
+                method="higher",
+            )
         else:
             raise RuntimeError('invalid contrast stretch parameter "{}"'.format(val))
-        print('{} contrast min {:.2f} max {:.2f}'.format(band_name, lower, upper))
+        print("{} contrast min {:.2f} max {:.2f}".format(band_name, lower, upper))
         args.vis[band_name] = (lower, upper)
+
+    # Now set up figure
+    # TODO: Proper data handling
+    # TODO pass object to next functions
+    sample_id, img_data = data[0]
+    ts = img_data[10]
+    oMapping60m = img_data[60]
+    vhr_layers = img_data["vhr"]
 
     # Load possibly existing flag values
     if config["vars"].flag_dir is None:
@@ -572,33 +585,25 @@ def main(args):
             flag_dir = config["vars"].flag_dir
         else:
             raise RuntimeError("Output directory for flag files does not exist")
-    flags_file_path = os.path.join(flag_dir, f"flags_{args.pid}.pickle")
+    flags_file_path = os.path.join(flag_dir, f"flags_{args.pid}.json")
     if os.path.exists(flags_file_path):
-        with open(flags_file_path, "rb") as flags_file:
-            flag_val_datetime = pickle.load(flags_file)
-        flag_val = dict()
+        with open(flags_file_path, "r") as flags_file:
+            flag_val_datetime = json.load(flags_file)
+        flag_val = {}
         flags_not_shown = []
         for date_time, val in flag_val_datetime.items():
             try:
-                # TODO figure out what is going on here
-                flag_index = ts.lSensingTimes.index(date_time)
+                str_times = ts.time.dt.strftime("%Y-%m-%d").values
+                flag_index = list(str_times).index(date_time)
                 flag_val[flag_index] = val
             except ValueError:
                 flags_not_shown.append(f"{date_time:%Y-%m-%d %H:%M:%S}")
     else:
         flag_val = None
-        flag_val_datetime = dict()
+        flag_val_datetime = {}
         flags_not_shown = []
     if flags_not_shown:
         print("\nFlags not shown: {}\n".format(", ".join(flags_not_shown)))
-
-    # Now set up figure
-    # TODO: Proper data handling
-    # TODO pass object to next functions
-    sample_id, img_data = data[0]
-    ts = img_data[10]
-    oMapping60m = img_data[60]
-    vhr_layers = img_data["vhr"]
 
     plt.ion()
     # row, col of sample in image (might need to be done better)
@@ -624,21 +629,14 @@ def main(args):
         command = input(prompt)
         #        breakpoint()
         if command.startswith("q"):
+            str_times = ts.time.dt.strftime("%Y-%m-%d").values
             # Convert flag indices to datetime
-            for flag_index, val in EventHandler.flag_val.items():
-                flag_val_datetime[ts.lSensingTimes[flag_index]] = val
-            # Remove deleted flags also from flag_val_datetime
-            keys_to_delete = []
-            for flag_date_time, val in flag_val_datetime.items():
-                if flag_date_time in ts.lSensingTimes:
-                    index_to_check = ts.lSensingTimes.index(flag_date_time)
-                    if index_to_check not in EventHandler.flag_val:
-                        keys_to_delete.append(flag_date_time)
-            if keys_to_delete:
-                for flag_date_time in keys_to_delete:
-                    del flag_val_datetime[flag_date_time]
-            with open(flags_file_path, "wb") as flags_file:
-                pickle.dump(flag_val_datetime, flags_file)
+            flags = {
+                str_times[flag_index]: flag_value
+                for flag_index, flag_value in EventHandler.flag_val.items()
+            }
+            with open(flags_file_path, "w") as flags_file:
+                json.dump(flags, flags_file, indent=4)
             _quit = True
 
     return 0
