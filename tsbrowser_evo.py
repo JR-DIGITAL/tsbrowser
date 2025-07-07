@@ -11,14 +11,6 @@ import time
 from datetime import datetime
 from itertools import compress
 from pathlib import Path
-
-sLibPath = os.path.abspath(
-    os.path.join(os.path.dirname(os.path.realpath(__file__)), "..")
-)
-if sLibPath not in sys.path:
-    sys.path.append(sLibPath)
-    sys.path.append(os.path.abspath(os.path.join(sLibPath, "..", "individual", "vij")))
-
 import geopandas as gpd
 import matplotlib.dates as mdates
 import matplotlib.patches as patches
