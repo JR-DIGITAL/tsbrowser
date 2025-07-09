@@ -631,13 +631,30 @@ def main(args):
     load_config(args.config)
     flag_labels.update(config["vars"].add_flag_labels)
 
-    if args.pause:
-        if not os.path.exists(args.pause_file):
-            with open(args.pause_file, "w") as f:
-                f.write("pause")
-
     # Load vector file once
     geom_df = gpd.read_file(Path(config["vars"].path))
+    if not args.pid:
+        print("No PIDs provided. Checking for existing flag files...")
+        all_pids = geom_df[config["vars"].attr_id].astype(str).tolist()
+
+        if config["vars"].flag_dir is None:
+            flag_dir = os.path.dirname(config["vars"].path)
+        else:
+            flag_dir = config["vars"].flag_dir
+
+        existing_flags = {
+            f[len("flags_"):-len(".json")]
+            for f in os.listdir(flag_dir)
+            if f.startswith("flags_") and f.endswith(".json")
+        }
+
+        args.pid = [pid for pid in all_pids if str(pid) not in existing_flags]
+        print(f"{len(args.pid)} samples to interpret.")
+
+        if not args.pid:
+            print("All PIDs already have flag files. Exiting.")
+            return 0
+
     attr_names_to_check = set([config["vars"].attr_id, config["vars"].attr_i_loc])
     if not config["vars"].legacy_mode:
         attr_names_to_check.add(config["vars"].attr_q_loc)
@@ -663,7 +680,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Browse image time series")
     parser.add_argument("config", help="Configuration file", metavar="PATH")
-    parser.add_argument("pid", help="ID(s) of point(s) to display", nargs='+', metavar="STR or INT")
+    parser.add_argument("pid", help="ID(s) of point(s) to display", nargs='*', metavar="STR or INT")
     parser.add_argument("--pattern", help="Raster file search pattern", metavar="STR")
     parser.add_argument(
         "--semilogy",
