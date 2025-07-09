@@ -589,13 +589,13 @@ def main(args):
             flag_val_datetime = json.load(flags_file)
         flag_val = {}
         flags_not_shown = []
-        for date_time, val in flag_val_datetime.items():
+        for date_time, val in flag_val_datetime["flags"].items():
             try:
                 str_times = ts.time.dt.strftime("%Y-%m-%d").values
                 flag_index = list(str_times).index(date_time)
                 flag_val[flag_index] = val
             except ValueError:
-                flags_not_shown.append(f"{date_time:%Y-%m-%d %H:%M:%S}")
+                flags_not_shown.append(f"{date_time:%Y-%m-%d}")
     else:
         flag_val = None
         flag_val_datetime = {}
@@ -621,21 +621,38 @@ def main(args):
     fig.canvas.mpl_connect("key_press_event", EventHandler.on_key)
     fig.canvas.mpl_connect("scroll_event", EventHandler.on_scroll)
 
-    # Wait for the user to issue quit command
-    _quit = False
-    while not _quit:
-        command = input(prompt)
-        #        breakpoint()
-        if command.startswith("q"):
-            str_times = ts.time.dt.strftime("%Y-%m-%d").values
-            # Convert flag indices to datetime
-            flags = {
-                str_times[flag_index]: flag_value
-                for flag_index, flag_value in EventHandler.flag_val.items()
-            }
-            with open(flags_file_path, "w") as flags_file:
-                json.dump(flags, flags_file, indent=4)
-            _quit = True
+    # Prompt user immediately for interpretation confidence and comment
+    previous_confidence = flag_val_datetime.get("confidence", None)
+    confidence_str = f" [ENTER to confirm previous value: {previous_confidence}]" if previous_confidence is not None else ""
+    previous_comment = flag_val_datetime.get("comment", None)
+    comment_str = f" [ENTER to confirm previous value: {previous_comment}]" if previous_comment is not None else ""
+    print(f"Interpretation for point {sample_id}:")
+    confidence_input = input(f"Enter interpretation confidence (high/h, medium/m, low/l){confidence_str}: ").strip().lower()
+    confidence = confidence_input or previous_confidence
+    while confidence not in {"high", "medium", "low", "h", "m", "l"}:
+        confidence = input("Please enter 'high', 'medium', or 'low': ").strip().lower()
+    if confidence in {"h", "m", "l"}:
+        confidence = {"h": "high", "m": "medium", "l": "low"}[confidence]
+
+    comment_input = input(f"Enter any comment about the interpretation{comment_str}: ").strip()
+    comment = comment_input or previous_comment
+
+    # Save flags as before
+    str_times = ts.time.dt.strftime("%Y-%m-%d").values
+    flags = {
+        str_times[flag_index]: flag_value
+        for flag_index, flag_value in EventHandler.flag_val.items()
+    }
+
+    # Add confidence and comment to the saved data
+    output_data = {
+        "flags": flags,
+        "confidence": confidence,
+        "comment": comment,
+    }
+
+    with open(flags_file_path, "w") as flags_file:
+        json.dump(output_data, flags_file, indent=4)
 
     return 0
 
