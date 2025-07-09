@@ -293,7 +293,7 @@ def load_stack(files: list[Path], times: list[datetime], point, config):
 
     chips = []
     for tif_path in files:
-        da = rioxarray.open_rasterio(tif_path, mask_and_scale=True)  # chunks="auto")
+        da = rioxarray.open_rasterio(tif_path, masked=True)  # chunks="auto")
         # Slice the chip
         if not config["vars"].legacy_mode:
             da = da.isel(
@@ -349,7 +349,7 @@ def main(args):
         config["vars"].i_pattern = args.pattern
 
     # Load vector file
-    geom_df = gpd.read_file(config["vars"].path)
+    geom_df = gpd.read_file(Path(config["vars"].path))
     attr_names_to_check = set([config["vars"].attr_id, config["vars"].attr_i_loc])
     if not config["vars"].legacy_mode:
         attr_names_to_check.add(config["vars"].attr_q_loc)
