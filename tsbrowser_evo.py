@@ -1,5 +1,3 @@
-#!/usr/bin/env PythonInterpreter
-
 import argparse
 import asyncio
 import importlib
