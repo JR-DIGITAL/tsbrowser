@@ -178,9 +178,9 @@ class UiEventHandler:
             self.toggle_flag_state(i, label)
 
 
-def setup_figure(args):
+def setup_figure(args, pid):
     fig = plt.figure(figsize=(10 * args.scalewindow[0], 7.5 * args.scalewindow[1]))
-    fig.canvas.manager.set_window_title(args.pid)
+    fig.canvas.manager.set_window_title(f"PID: {pid}")
     gs = fig.add_gridspec(4, 3, height_ratios=[2 / 5, 1 / 5, 1 / 5, 1 / 5])
     ax = dict()
     ax["img_L"] = fig.add_subplot(gs[0, 0])
@@ -325,20 +325,23 @@ def prepare_rgb(ds, bands, vis):
     return out_img
 
 
-def main(args):
-    # Load config variables
-    load_config(args.config)
-    flag_labels.update(config["vars"].add_flag_labels)
+def process_pid(args, original_geom_df, current_pid):
+    # Subset to only the current pid
+    if pd.api.types.is_numeric_dtype(original_geom_df[config["vars"].attr_id].dtype):
+        geom_df_subset = original_geom_df.query(f"{config['vars'].attr_id} == {current_pid}")
+    else:
+        geom_df_subset = original_geom_df.query(f"{config['vars'].attr_id} == '{current_pid}'")
 
-    if args.pause:
-        if not os.path.exists(args.pause_file):
-            with open(args.pause_file, "w") as f:
-                f.write("pause")
+    if geom_df_subset.empty:
+        print(f"No data found for PID: {current_pid}")
+        return
+
+    sample_series = geom_df_subset.iloc[0]
 
     # Set up acquisition timestamp read function
     if config["vars"].t_mode == "metadata":
         # TODO fix this path
-        RetrieveTimestamp = helpers.RetrieveAcquisitionDateTime
+        RetrieveTimestamp = None # helpers.RetrieveAcquisitionDateTime
     elif config["vars"].t_mode == "filename":
         RetrieveTimestamp = lambda filename: datetime.strptime(
             filename.name[config["vars"].t_slice], config["vars"].t_format
@@ -348,189 +351,159 @@ def main(args):
     if args.pattern:
         config["vars"].i_pattern = args.pattern
 
-    # Load vector file
-    geom_df = gpd.read_file(Path(config["vars"].path))
-    attr_names_to_check = set([config["vars"].attr_id, config["vars"].attr_i_loc])
+    # Get image files
+    tif_lists = dict()
     if not config["vars"].legacy_mode:
-        attr_names_to_check.add(config["vars"].attr_q_loc)
+        # get quality files
+        data_dir_q = Path(sample_series[config["vars"].attr_q_loc])
+        if not data_dir_q.exists():
+            raise RuntimeError(f"Raster quality directory does not exist: {data_dir_q}")
+        glob_files = data_dir_q.glob(
+            f"{'**/' if config['vars'].q_recursive else ''}{config['vars'].q_pattern}"
+        )
+        tif_lists["q"] = sorted(list(glob_files))
 
-    # subset to only the pid, if pid is passed
-    if args.pid:
-        if pd.api.types.is_numeric_dtype(geom_df[config["vars"].attr_id].dtype):
-            geom_df = geom_df.query(f"{config['vars'].attr_id} == {args.pid}")
-        else:
-            geom_df = geom_df.query(f"{config['vars'].attr_id} == '{args.pid}'")
+    # Get image input directory
+    data_dir = Path(sample_series[config["vars"].attr_i_loc])
+    if not data_dir.exists():
+        raise RuntimeError(f"Raster data directory does not exist: {data_dir}")
 
-    # TODO Error handling if attributes not available
-    # if not oTab.ValidateAttributeSet(attr_names_to_check):
-    #     raise RuntimeError('Attribute name error')
-
-    # From here everything should be a function which works on a row by row basis
-
-    def get_image_files(config: dict, sample_series: gpd.GeoSeries):
-        tif_lists = dict()
-        if not config["vars"].legacy_mode:
-            # get quality files
-            data_dir_q = Path(sample_series[config["vars"].attr_q_loc])
-            if not data_dir_q.exists():
-                raise RuntimeError("Raster quality directory does not exist")
-            glob_files = data_dir_q.glob(
-                f"{'**/' if config['vars'].q_recursive else ''}{config['vars'].q_pattern}"
+    for res in ("10m", "20m", "60m"):
+        res_path = data_dir / res
+        if res_path.exists():
+            glob_files = res_path.glob(
+                f"{'**/' if config['vars'].i_recursive else ''}{config['vars'].i_pattern}"
             )
-            tif_lists["q"] = sorted(list(glob_files))
+            tif_lists[res] = sorted(list(glob_files))
 
-        # Get image input directory
-        data_dir = Path(sample_series[config["vars"].attr_i_loc])
-        if not data_dir.exists():
-            raise RuntimeError("Raster data directory does not exist")
-
-        for res in ("10m", "20m", "60m"):
-            res_path = data_dir / res
-            if res_path.exists():
-                glob_files = res_path.glob(
+        else:
+            # if there are no resolution subdirs in the directory, assume that 10m data is directly there
+            if res == "10m":
+                glob_files = data_dir.glob(
                     f"{'**/' if config['vars'].i_recursive else ''}{config['vars'].i_pattern}"
                 )
                 tif_lists[res] = sorted(list(glob_files))
-
             else:
-                # if there are no resolution subdirs in the directory, assume that 10m data is directly there
-                if res == "10m":
-                    glob_files = data_dir.glob(
-                        f"{'**/' if config['vars'].i_recursive else ''}{config['vars'].i_pattern}"
-                    )
-                    tif_lists[res] = sorted(list(glob_files))
-                else:
-                    tif_lists[res] = []
+                tif_lists[res] = []
 
-        # Create temporal consistency
-        if config["vars"].legacy_mode:
-            t_common = list(map(RetrieveTimestamp, tif_lists["10m"]))
-        else:
-            t_qa = list(map(RetrieveTimestamp, tif_lists["q"]))
-            t_im = list(map(RetrieveTimestamp, tif_lists["10m"]))
+    # Create temporal consistency
+    if config["vars"].legacy_mode:
+        t_common = list(map(RetrieveTimestamp, tif_lists["10m"]))
+    else:
+        t_qa = list(map(RetrieveTimestamp, tif_lists["q"]))
+        t_im = list(map(RetrieveTimestamp, tif_lists["10m"]))
 
-            # Find common timestamps between q and 10m files
-            t_qa_set = set(t_qa)
-            t_im_set = set(t_im)
-            t_common_set = t_qa_set.intersection(t_im_set)
-            t_common = sorted(list(t_common_set))
+        # Find common timestamps between q and 10m files
+        t_qa_set = set(t_qa)
+        t_im_set = set(t_im)
+        t_common_set = t_qa_set.intersection(t_im_set)
+        t_common = sorted(list(t_common_set))
 
-            # Track discarded timestamps
-            discarded_qa = t_qa_set - t_common_set
-            discarded_im = t_im_set - t_common_set
+        # Track discarded timestamps
+        discarded_qa = t_qa_set - t_common_set
+        discarded_im = t_im_set - t_common_set
 
-            # Filter tif_lists to keep only files with common timestamps
-            filtered_qa = []
-            filtered_im = []
+        # Filter tif_lists to keep only files with common timestamps
+        filtered_qa = []
+        filtered_im = []
 
-            for i, timestamp in enumerate(t_qa):
-                if timestamp in t_common_set:
-                    filtered_qa.append(tif_lists["q"][i])
+        for i, timestamp in enumerate(t_qa):
+            if timestamp in t_common_set:
+                filtered_qa.append(tif_lists["q"][i])
 
-            for i, timestamp in enumerate(t_im):
-                if timestamp in t_common_set:
-                    filtered_im.append(tif_lists["10m"][i])
+        for i, timestamp in enumerate(t_im):
+            if timestamp in t_common_set:
+                filtered_im.append(tif_lists["10m"][i])
 
-            tif_lists["q"] = filtered_qa
-            tif_lists["10m"] = filtered_im
+        tif_lists["q"] = filtered_qa
+        tif_lists["10m"] = filtered_im
 
-            # Print discarded files
-            if discarded_qa:
-                print(
-                    "Discarded quality files: {}".format(
-                        ", ".join(
-                            map(lambda x: x.strftime("%Y-%m-%d"), sorted(discarded_qa))
-                        )
+        # Print discarded files
+        if discarded_qa:
+            print(
+                "Discarded quality files: {}".format(
+                    ", ".join(
+                        map(lambda x: x.strftime("%Y-%m-%d"), sorted(discarded_qa))
                     )
                 )
-            if discarded_im:
-                print(
-                    "Discarded image files: {}".format(
-                        ", ".join(
-                            map(lambda x: x.strftime("%Y-%m-%d"), sorted(discarded_im))
-                        )
+            )
+        if discarded_im:
+            print(
+                "Discarded image files: {}".format(
+                    ", ".join(
+                        map(lambda x: x.strftime("%Y-%m-%d"), sorted(discarded_im))
                     )
                 )
+            )
 
-        # Get target point geometry in raster data projection
-        # TODO: Do that once outside the loop
-        with rasterio.open(tif_lists["q"][0], "r") as tif:
-            target_crs = tif.crs
-            bounds = tif.bounds
+    # Get target point geometry in raster data projection
+    with rasterio.open(tif_lists["q"][0], "r") as tif:
+        target_crs = tif.crs
+        bounds = tif.bounds
 
-        transformer = Transformer.from_crs(geom_df.crs, target_crs, always_xy=True)
-        point_reproj = shapely.transform(
-            sample_series.geometry, transformer.transform, interleaved=False
-        )
-        is_inside_bounds = (bounds.left <= point_reproj.x <= bounds.right) and (
-            bounds.bottom <= point_reproj.y <= bounds.top
-        )
-        if not is_inside_bounds:
-            raise RuntimeError("Sample point outside of raster extent")
+    transformer = Transformer.from_crs(original_geom_df.crs, target_crs, always_xy=True)
+    point_reproj = shapely.transform(
+        sample_series.geometry, transformer.transform, interleaved=False
+    )
+    is_inside_bounds = (bounds.left <= point_reproj.x <= bounds.right) and (
+        bounds.bottom <= point_reproj.y <= bounds.top
+    )
+    if not is_inside_bounds:
+        raise RuntimeError("Sample point outside of raster extent")
 
-        q_stack = load_stack(tif_lists["q"], t_common, point_reproj, config)
-        # TODO: Do band subset in load_stack
-        selected_band = q_stack.sel(band=config["vars"].q_band)
-        if config["vars"].q_mode == "oqb":
-            ts_q_bin = selected_band < config["vars"].threshold
-        elif config["vars"].q_mode == "score":
-            ts_q_bin = selected_band > config["vars"].threshold
-        elif config["vars"].q_mode == "scl":
-            ts_q_bin = ~selected_band.isin(config["vars"].masking_classes)
-        overall_assessment = ts_q_bin.mean(dim=["x", "y"])
-        row_slice = slice(
-            len(q_stack.y) // 2 - config["vars"].specific_radius,
-            len(q_stack.y) // 2 + config["vars"].specific_radius + 1,
-        )
-        col_slice = slice(
-            len(q_stack.x) // 2 - config["vars"].specific_radius,
-            len(q_stack.x) // 2 + config["vars"].specific_radius + 1,
-        )
-        specific_assessment = (
-            ts_q_bin.isel(y=row_slice, x=col_slice).mean(dim=["x", "y"])
-            >= config["vars"].specific_valid_ratio
-        )
-        selector = np.logical_and(overall_assessment, specific_assessment).values
+    q_stack = load_stack(tif_lists["q"], t_common, point_reproj, config)
+    selected_band = q_stack.sel(band=config["vars"].q_band)
+    if config["vars"].q_mode == "oqb":
+        ts_q_bin = selected_band < config["vars"].threshold
+    elif config["vars"].q_mode == "score":
+        ts_q_bin = selected_band > config["vars"].threshold
+    elif config["vars"].q_mode == "scl":
+        ts_q_bin = ~selected_band.isin(config["vars"].masking_classes)
+    overall_assessment = ts_q_bin.mean(dim=["x", "y"])
+    row_slice = slice(
+        len(q_stack.y) // 2 - config["vars"].specific_radius,
+        len(q_stack.y) // 2 + config["vars"].specific_radius + 1,
+    )
+    col_slice = slice(
+        len(q_stack.x) // 2 - config["vars"].specific_radius,
+        len(q_stack.x) // 2 + config["vars"].specific_radius + 1,
+    )
+    specific_assessment = (
+        ts_q_bin.isel(y=row_slice, x=col_slice).mean(dim=["x", "y"])
+        >= config["vars"].specific_valid_ratio
+    )
+    selector = np.logical_and(overall_assessment, specific_assessment).values
 
-        ts = load_stack(
+    ts = load_stack(
+        list(compress(tif_lists["10m"], selector)),
+        list(compress(t_common, selector)),
+        point_reproj,
+        config,
+    )
+
+    # select appropriate bands
+    selected_bands = list(config["vars"].layermap.values())
+    ts = ts.sel(band=selected_bands)
+
+    # Get 60m geotransform
+    oMapping60m = None
+    if tif_lists["60m"]:
+        oMapping60m = load_stack(
             list(compress(tif_lists["10m"], selector)),
             list(compress(t_common, selector)),
             point_reproj,
             config,
         )
 
-        # select appropriate bands
-        selected_bands = list(config["vars"].layermap.values())
-        ts = ts.sel(band=selected_bands)
-
-        # Get 60m geotransform
-        oMapping60m = None
-        if tif_lists["60m"]:
-            oMapping60m = load_stack(
-                list(compress(tif_lists["10m"], selector)),
-                list(compress(t_common, selector)),
-                point_reproj,
-                config,
-            )
-
-        # Fetch VHR data
-        vhr_layers = asyncio.run(
-            get_vhr(
-                sample_series.geometry.y,
-                sample_series.geometry.x,
-                config["vars"].vhr_zoom,
-                remove_duplicates=config["vars"].remove_duplicates,
-            )
+    # Fetch VHR data
+    vhr_layers = asyncio.run(
+        get_vhr(
+            sample_series.geometry.y,
+            sample_series.geometry.x,
+            config["vars"].vhr_zoom,
+            remove_duplicates=config["vars"].remove_duplicates,
         )
-
-        return (
-            sample_series[config["vars"].attr_id],
-            {10: ts, 60: oMapping60m, "vhr": vhr_layers},
-        )
-
-    data = []
-    for index, row in geom_df.iterrows():
-        data.append(get_image_files(config, row))
+    )
 
     # Calculate/set vis bounds
     args.vis = {}
@@ -564,58 +537,54 @@ def main(args):
             )
         else:
             raise RuntimeError('invalid contrast stretch parameter "{}"'.format(val))
-        print("{} contrast min {:.2f} max {:.2f}".format(band_name, lower, upper))
+        print(f"{band_name} contrast min {lower:.2f} max {upper:.2f}")
         args.vis[band_name] = (lower, upper)
 
     # Now set up figure
-    # TODO: Proper data handling
-    # TODO pass object to next functions
-    sample_id, img_data = data[0]
-    ts = img_data[10]
-    oMapping60m = img_data[60]
-    vhr_layers = img_data["vhr"]
+    plt.ion()
+    fig, ax = setup_figure(args, current_pid)
+    handles = init_plots(args, ts, vhr_layers[0], ax)
+    
+    # row, col of sample in image (might need to be done better)
+    # right now it is just assumed to be in the middle of the image
+    row = len(ts.y) // 2
+    col = len(ts.x) // 2
+    
+    add_patches(ax, row, col)
+    add_patch_vhr(ax, *vhr_layers[0]["point_pixel_offset_xy"])
+    EventHandler = UiEventHandler(args, ts, vhr_layers, ax, handles)
 
     # Load possibly existing flag values
     if config["vars"].flag_dir is None:
-        flag_dir = os.path.dirname(args.path)
+        flag_dir = os.path.dirname(config["vars"].path) # Use the path from config, not args.path
     else:
         if os.path.exists(config["vars"].flag_dir):
             flag_dir = config["vars"].flag_dir
         else:
             raise RuntimeError("Output directory for flag files does not exist")
-    flags_file_path = os.path.join(flag_dir, f"flags_{args.pid}.json")
+    flags_file_path = os.path.join(flag_dir, f"flags_{current_pid}.json")
+    
+    flag_val_datetime = {}
+    flag_val = None
+    flags_not_shown = []
+
     if os.path.exists(flags_file_path):
         with open(flags_file_path, "r") as flags_file:
             flag_val_datetime = json.load(flags_file)
         flag_val = {}
-        flags_not_shown = []
         for date_time, val in flag_val_datetime["flags"].items():
             try:
                 str_times = ts.time.dt.strftime("%Y-%m-%d").values
                 flag_index = list(str_times).index(date_time)
                 flag_val[flag_index] = val
             except ValueError:
-                flags_not_shown.append(f"{date_time:%Y-%m-%d}")
-    else:
-        flag_val = None
-        flag_val_datetime = {}
-        flags_not_shown = []
+                flags_not_shown.append(f"{date_time}") # Keep original format for reporting
     if flags_not_shown:
-        print("\nFlags not shown: {}\n".format(", ".join(flags_not_shown)))
+        print(f"\nFlags not shown for PID {current_pid}: {', '.join(flags_not_shown)}\n")
 
-    plt.ion()
-    # row, col of sample in image (might need to be done better)
-    # right now it is just assumed to be in the middle of the image
-    row = len(ts.y) // 2
-    col = len(ts.x) // 2
-    fig, ax = setup_figure(args)
-    handles = init_plots(args, ts, vhr_layers[0], ax)
-    add_patches(ax, row, col)
-    add_patch_vhr(ax, *vhr_layers[0]["point_pixel_offset_xy"])
-    EventHandler = UiEventHandler(args, ts, vhr_layers, ax, handles)
     if flag_val is not None:
         EventHandler.set_flags(flag_val)
-    # breakpoint()
+    
     EventHandler.update_vhr(len(vhr_layers) - 1)
     fig.canvas.mpl_connect("pick_event", EventHandler.on_pick)
     fig.canvas.mpl_connect("key_press_event", EventHandler.on_key)
@@ -626,7 +595,8 @@ def main(args):
     confidence_str = f" [ENTER to confirm previous value: {previous_confidence}]" if previous_confidence is not None else ""
     previous_comment = flag_val_datetime.get("comment", None)
     comment_str = f" [ENTER to confirm previous value: {previous_comment}]" if previous_comment is not None else ""
-    print(f"Interpretation for point {sample_id}:")
+    
+    print(f"Interpretation for point {current_pid}:")
     confidence_input = input(f"Enter interpretation confidence (high/h, medium/m, low/l){confidence_str}: ").strip().lower()
     confidence = confidence_input or previous_confidence
     while confidence not in {"high", "medium", "low", "h", "m", "l"}:
@@ -653,14 +623,47 @@ def main(args):
 
     with open(flags_file_path, "w") as flags_file:
         json.dump(output_data, flags_file, indent=4)
+    
+    plt.close(fig) # Close the current figure
 
+def main(args):
+    # Load config variables
+    load_config(args.config)
+    flag_labels.update(config["vars"].add_flag_labels)
+
+    if args.pause:
+        if not os.path.exists(args.pause_file):
+            with open(args.pause_file, "w") as f:
+                f.write("pause")
+
+    # Load vector file once
+    geom_df = gpd.read_file(Path(config["vars"].path))
+    attr_names_to_check = set([config["vars"].attr_id, config["vars"].attr_i_loc])
+    if not config["vars"].legacy_mode:
+        attr_names_to_check.add(config["vars"].attr_q_loc)
+
+    # TODO Error handling if attributes not available
+    # if not oTab.ValidateAttributeSet(attr_names_to_check):
+    #     raise RuntimeError('Attribute name error')
+
+    for pid in args.pid:
+        try:
+            process_pid(args, geom_df, pid)
+        except Exception as e:
+            print(f"Error processing PID {pid}: {e}")
+        
+        if pid != args.pid[-1]: # If not the last PID
+            cont = input(f"Finished with PID {pid}. Press Enter to continue to next PID, or 'q' to quit: ")
+            if cont.lower() == 'q':
+                break
+    
     return 0
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Browse image time series")
     parser.add_argument("config", help="Configuration file", metavar="PATH")
-    parser.add_argument("pid", help="ID of point to display", metavar="STR or INT")
+    parser.add_argument("pid", help="ID(s) of point(s) to display", nargs='+', metavar="STR or INT")
     parser.add_argument("--pattern", help="Raster file search pattern", metavar="STR")
     parser.add_argument(
         "--semilogy",
