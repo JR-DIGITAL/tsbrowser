@@ -690,16 +690,5 @@ if __name__ == "__main__":
         default="",
         metavar="YYYYMMDD",
     )
-    parser.add_argument(
-        "--pause",
-        action="store_true",
-        help="Pause interactive session until externally released",
-    )
-    parser.add_argument(
-        "--pause-file",
-        type=str,
-        default="pause.tmp",
-        help="Path to the pause file used to delay the interactive session",
-    )
     args = parser.parse_args()
     main(args)
