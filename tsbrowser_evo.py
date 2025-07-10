@@ -8,7 +8,7 @@ import json
 import sys
 import queue
 import threading
-import logging # Import the logging module
+import logging  # Import the logging module
 from datetime import datetime
 from itertools import compress
 from pathlib import Path
@@ -38,21 +38,21 @@ gc.set_threshold(0)
 # --- Logging Configuration ---
 # Create a custom logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO) # Set the minimum logging level
+logger.setLevel(logging.INFO)  # Set the minimum logging level
 
 # Create handlers
 # Console handler (for user-facing messages, possibly warnings/errors)
 console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setLevel(logging.WARNING) # Only show WARNING and above on console
+console_handler.setLevel(logging.WARNING)  # Only show WARNING and above on console
 
 # File handler (for all detailed pre-loading output)
 # We will set the log file path dynamically later in main()
-file_handler = logging.FileHandler('tsbrowser_preload.log') # Default log file name
+file_handler = logging.FileHandler("tsbrowser_preload.log")  # Default log file name
 file_handler.setLevel(logging.INFO)
 
 # Create formatters and add them to handlers
-console_formatter = logging.Formatter('%(levelname)s: %(message)s')
-file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+console_formatter = logging.Formatter("%(levelname)s: %(message)s")
+file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 console_handler.setFormatter(console_formatter)
 file_handler.setFormatter(file_formatter)
 
@@ -60,6 +60,7 @@ file_handler.setFormatter(file_formatter)
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 # --- End Logging Configuration ---
+
 
 def load_config(sConfigFile):
     if os.path.exists(sConfigFile):
@@ -281,9 +282,7 @@ def init_plots(args, ts, vhr_layer, ax):
 
 def add_patches(ax, row, col):
     for key, val in iter(config["vars"].images.items()):
-        patch10 = patches.Rectangle(
-            (row - 1.5, col - 1.5), 3, 3, fill=False, ec="y"
-        )
+        patch10 = patches.Rectangle((row - 1.5, col - 1.5), 3, 3, fill=False, ec="y")
         ax[key].add_patch(patch10)
 
 
@@ -319,7 +318,8 @@ def load_stack(files: list[Path], times: list[datetime], point, config):
             if not config["vars"].legacy_mode:
                 da = da.isel(
                     y=slice(
-                        math.ceil(row - half_height_px), math.floor(row + half_height_px)
+                        math.ceil(row - half_height_px),
+                        math.floor(row + half_height_px),
                     ),
                     x=slice(
                         math.ceil(col - half_width_px), math.floor(col + half_width_px)
@@ -329,7 +329,9 @@ def load_stack(files: list[Path], times: list[datetime], point, config):
         # Combine along new "band" or "variable" dimension
         chip_stack = xr.concat(chips, dim=pd.Index(times, name="time"))
         # Set up temporal filter
-        start = pd.Timestamp(config["args"].startdate) if config["args"].startdate else None
+        start = (
+            pd.Timestamp(config["args"].startdate) if config["args"].startdate else None
+        )
         end = pd.Timestamp(config["args"].stopdate) if config["args"].stopdate else None
         chip_stack.sel(time=slice(start, end))
     return chip_stack
@@ -345,6 +347,7 @@ def prepare_rgb(ds, bands, vis):
     out_img = img.clip(0, 1).values
     return out_img
 
+
 # New function to load data for a single PID and put it into the queue
 def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
     while True:
@@ -353,16 +356,26 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
         except queue.Empty:
             break
 
-        logger.info(f"Preloading data for PID: {current_pid}") # Changed print to logger.info
+        logger.info(
+            f"Preloading data for PID: {current_pid}"
+        )  # Changed print to logger.info
 
         # Subset to only the current pid
-        if pd.api.types.is_numeric_dtype(original_geom_df[config["vars"].attr_id].dtype):
-            geom_df_subset = original_geom_df.query(f"{config['vars'].attr_id} == {current_pid}")
+        if pd.api.types.is_numeric_dtype(
+            original_geom_df[config["vars"].attr_id].dtype
+        ):
+            geom_df_subset = original_geom_df.query(
+                f"{config['vars'].attr_id} == {current_pid}"
+            )
         else:
-            geom_df_subset = original_geom_df.query(f"{config['vars'].attr_id} == '{current_pid}'")
+            geom_df_subset = original_geom_df.query(
+                f"{config['vars'].attr_id} == '{current_pid}'"
+            )
 
         if geom_df_subset.empty:
-            logger.warning(f"No data found for PID: {current_pid}") # Changed print to logger.warning
+            logger.warning(
+                f"No data found for PID: {current_pid}"
+            )  # Changed print to logger.warning
             pid_queue.task_done()
             continue
 
@@ -371,7 +384,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
         # Set up acquisition timestamp read function
         if config["vars"].t_mode == "metadata":
             # TODO fix this path
-            RetrieveTimestamp = None # helpers.RetrieveAcquisitionDateTime
+            RetrieveTimestamp = None  # helpers.RetrieveAcquisitionDateTime
         elif config["vars"].t_mode == "filename":
             RetrieveTimestamp = lambda filename: datetime.strptime(
                 filename.name[config["vars"].t_slice], config["vars"].t_format
@@ -387,7 +400,9 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
             # get quality files
             data_dir_q = Path(sample_series[config["vars"].attr_q_loc])
             if not data_dir_q.exists():
-                logger.warning(f"Raster quality directory does not exist: {data_dir_q} for PID {current_pid}") # Changed print to logger.warning
+                logger.warning(
+                    f"Raster quality directory does not exist: {data_dir_q} for PID {current_pid}"
+                )  # Changed print to logger.warning
                 pid_queue.task_done()
                 continue
             glob_files = data_dir_q.glob(
@@ -398,7 +413,9 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
         # Get image input directory
         data_dir = Path(sample_series[config["vars"].attr_i_loc])
         if not data_dir.exists():
-            logger.warning(f"Raster data directory does not exist: {data_dir} for PID {current_pid}") # Changed print to logger.warning
+            logger.warning(
+                f"Raster data directory does not exist: {data_dir} for PID {current_pid}"
+            )  # Changed print to logger.warning
             pid_queue.task_done()
             continue
 
@@ -454,7 +471,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
 
             # Print discarded files
             if discarded_qa:
-                logger.info( # Changed print to logger.info
+                logger.info(  # Changed print to logger.info
                     "Discarded quality files: {}".format(
                         ", ".join(
                             map(lambda x: x.strftime("%Y-%m-%d"), sorted(discarded_qa))
@@ -462,7 +479,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
                     )
                 )
             if discarded_im:
-                logger.info( # Changed print to logger.info
+                logger.info(  # Changed print to logger.info
                     "Discarded image files: {}".format(
                         ", ".join(
                             map(lambda x: x.strftime("%Y-%m-%d"), sorted(discarded_im))
@@ -471,7 +488,9 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
                 )
 
         if not tif_lists["q"] or not tif_lists["10m"]:
-            logger.warning(f"No common valid files found for PID {current_pid}. Skipping.") # Changed print to logger.warning
+            logger.warning(
+                f"No common valid files found for PID {current_pid}. Skipping."
+            )  # Changed print to logger.warning
             pid_queue.task_done()
             continue
 
@@ -480,7 +499,9 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
             target_crs = tif.crs
             bounds = tif.bounds
 
-        transformer = Transformer.from_crs(original_geom_df.crs, target_crs, always_xy=True)
+        transformer = Transformer.from_crs(
+            original_geom_df.crs, target_crs, always_xy=True
+        )
         point_reproj = shapely.transform(
             sample_series.geometry, transformer.transform, interleaved=False
         )
@@ -488,7 +509,9 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
             bounds.bottom <= point_reproj.y <= bounds.top
         )
         if not is_inside_bounds:
-            logger.warning(f"Sample point outside of raster extent for PID {current_pid}. Skipping.") # Changed print to logger.warning
+            logger.warning(
+                f"Sample point outside of raster extent for PID {current_pid}. Skipping."
+            )  # Changed print to logger.warning
             pid_queue.task_done()
             continue
 
@@ -516,7 +539,9 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
         selector = np.logical_and(overall_assessment, specific_assessment).values
 
         if not any(selector):
-            logger.warning(f"No valid time steps after quality assessment for PID {current_pid}. Skipping.") # Changed print to logger.warning
+            logger.warning(
+                f"No valid time steps after quality assessment for PID {current_pid}. Skipping."
+            )  # Changed print to logger.warning
             pid_queue.task_done()
             continue
 
@@ -541,7 +566,9 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
             )
         )
         if not vhr_layers:
-            logger.warning(f"No VHR data found for PID {current_pid}. Skipping.") # Changed print to logger.warning
+            logger.warning(
+                f"No VHR data found for PID {current_pid}. Skipping."
+            )  # Changed print to logger.warning
             pid_queue.task_done()
             continue
 
@@ -576,8 +603,12 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
                     method="higher",
                 )
             else:
-                raise RuntimeError('invalid contrast stretch parameter "{}"'.format(val))
-            logger.info(f"{band_name} contrast min {lower:.2f} max {upper:.2f}") # Changed print to logger.info
+                raise RuntimeError(
+                    'invalid contrast stretch parameter "{}"'.format(val)
+                )
+            logger.info(
+                f"{band_name} contrast min {lower:.2f} max {upper:.2f}"
+            )  # Changed print to logger.info
             vis[band_name] = (lower, upper)
 
         # row, col of sample in image (might need to be done better)
@@ -594,22 +625,24 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
             else:
                 raise RuntimeError("Output directory for flag files does not exist")
         flags_file_path = os.path.join(flag_dir, f"flags_{current_pid}.json")
-        
+
         flag_val_datetime = {}
         if os.path.exists(flags_file_path):
             with open(flags_file_path, "r") as flags_file:
                 flag_val_datetime = json.load(flags_file)
 
-        preloaded_data_queue.put({
-            "pid": current_pid,
-            "ts": ts,
-            "vhr_layers": vhr_layers,
-            "vis": vis,
-            "row": row,
-            "col": col,
-            "flag_val_datetime": flag_val_datetime,
-            "flags_file_path": flags_file_path
-        })
+        preloaded_data_queue.put(
+            {
+                "pid": current_pid,
+                "ts": ts,
+                "vhr_layers": vhr_layers,
+                "vis": vis,
+                "row": row,
+                "col": col,
+                "flag_val_datetime": flag_val_datetime,
+                "flags_file_path": flags_file_path,
+            }
+        )
         pid_queue.task_done()
 
 
@@ -628,7 +661,7 @@ def process_pid(args, preloaded_data):
     # Now set up figure
     fig, ax = setup_figure(args, current_pid)
     handles = init_plots(args, ts, vhr_layers[0], ax)
-    
+
     add_patches(ax, row, col)
     add_patch_vhr(ax, *vhr_layers[0]["point_pixel_offset_xy"])
     EventHandler = UiEventHandler(args, ts, vhr_layers, ax, handles)
@@ -646,11 +679,13 @@ def process_pid(args, preloaded_data):
             except ValueError:
                 flags_not_shown.append(f"{date_time}")
     if flags_not_shown:
-        print(f"\nFlags not shown for PID {current_pid}: {', '.join(flags_not_shown)}\n") # Keep this print for immediate user feedback
+        print(
+            f"\nFlags not shown for PID {current_pid}: {', '.join(flags_not_shown)}\n"
+        )  # Keep this print for immediate user feedback
 
     if flag_val is not None:
         EventHandler.set_flags(flag_val)
-    
+
     EventHandler.update_vhr(len(vhr_layers) - 1)
     fig.canvas.mpl_connect("pick_event", EventHandler.on_pick)
     fig.canvas.mpl_connect("key_press_event", EventHandler.on_key)
@@ -658,19 +693,35 @@ def process_pid(args, preloaded_data):
 
     # Prompt user immediately for interpretation confidence and comment
     previous_confidence = flag_val_datetime.get("confidence", None)
-    confidence_str = f" [ENTER to confirm previous value: {previous_confidence}]" if previous_confidence is not None else ""
+    confidence_str = (
+        f" [ENTER to confirm previous value: {previous_confidence}]"
+        if previous_confidence is not None
+        else ""
+    )
     previous_comment = flag_val_datetime.get("comment", None)
-    comment_str = f" [ENTER to confirm previous value: {previous_comment}]" if previous_comment is not None else ""
-    
+    comment_str = (
+        f" [ENTER to confirm previous value: {previous_comment}]"
+        if previous_comment is not None
+        else ""
+    )
+
     print(f"Interpretation for point {current_pid}:")
-    confidence_input = input(f"Enter interpretation confidence (high/h, medium/m, low/l){confidence_str}: ").strip().lower()
+    confidence_input = (
+        input(
+            f"Enter interpretation confidence (high/h, medium/m, low/l){confidence_str}: "
+        )
+        .strip()
+        .lower()
+    )
     confidence = confidence_input or previous_confidence
     while confidence not in {"high", "medium", "low", "h", "m", "l", None}:
         confidence = input("Please enter 'high', 'medium', or 'low': ").strip().lower()
     if confidence in {"h", "m", "l"}:
         confidence = {"h": "high", "m": "medium", "l": "low"}[confidence]
 
-    comment_input = input(f"Enter any comment about the interpretation{comment_str}: ").strip()
+    comment_input = input(
+        f"Enter any comment about the interpretation{comment_str}: "
+    ).strip()
     comment = comment_input or previous_comment
 
     # Save flags as before
@@ -689,7 +740,7 @@ def process_pid(args, preloaded_data):
 
     with open(flags_file_path, "w") as flags_file:
         json.dump(output_data, flags_file, indent=4)
-    
+
     plt.close(fig)
     plt.ioff()
     gc.collect()
@@ -704,23 +755,23 @@ def main(args):
     # Set up the log file path after config is loaded
     # Get the directory of the config file
     config_dir = Path(args.config).parent
-    log_file_path = config_dir / 'tsbrowser_preload.log'
+    log_file_path = config_dir / "tsbrowser_preload.log"
 
     # Remove existing handlers to avoid adding multiple file handlers if main is called again (e.g. for testing)
     for handler in logger.handlers[:]:
         if isinstance(handler, logging.FileHandler):
             logger.removeHandler(handler)
-            handler.close() # Close the old file handler to release the file
+            handler.close()  # Close the old file handler to release the file
 
     # Create a new file handler with the desired path
     new_file_handler = logging.FileHandler(log_file_path)
     new_file_handler.setLevel(logging.INFO)
     new_file_handler.setFormatter(file_formatter)
     logger.addHandler(new_file_handler)
-    
+
     # Load vector file once
     geom_df = gpd.read_file(Path(config["vars"].path))
-    
+
     all_pids_to_process = []
     if not args.pid:
         print("No PIDs provided. Checking for existing flag files...")
@@ -732,12 +783,14 @@ def main(args):
             flag_dir = config["vars"].flag_dir
 
         existing_flags = {
-            f[len("flags_"):-len(".json")]
+            f[len("flags_") : -len(".json")]
             for f in os.listdir(flag_dir)
             if f.startswith("flags_") and f.endswith(".json")
         }
 
-        all_pids_to_process = [pid for pid in all_pids if str(pid) not in existing_flags]
+        all_pids_to_process = [
+            pid for pid in all_pids if str(pid) not in existing_flags
+        ]
         print(f"{len(all_pids_to_process)} samples to interpret.")
 
         if not all_pids_to_process:
@@ -745,7 +798,6 @@ def main(args):
             return 0
     else:
         all_pids_to_process = args.pid
-
 
     attr_names_to_check = set([config["vars"].attr_id, config["vars"].attr_i_loc])
     if not config["vars"].legacy_mode:
@@ -756,7 +808,9 @@ def main(args):
     #     raise RuntimeError('Attribute name error')
 
     pid_queue = queue.Queue()
-    preloaded_data_queue = queue.Queue(maxsize=5)  # Limit the queue size to avoid memory issues
+    preloaded_data_queue = queue.Queue(
+        maxsize=5
+    )  # Limit the queue size to avoid memory issues
     num_preload_threads = args.preload_threads
 
     # Populate the PID queue
@@ -766,7 +820,9 @@ def main(args):
     # Start the background data loading threads
     loader_threads = []
     for _ in range(num_preload_threads):
-        thread = threading.Thread(target=data_loader, args=(pid_queue, preloaded_data_queue, args, geom_df))
+        thread = threading.Thread(
+            target=data_loader, args=(pid_queue, preloaded_data_queue, args, geom_df)
+        )
         thread.daemon = True
         loader_threads.append(thread)
         thread.start()
@@ -774,18 +830,24 @@ def main(args):
     processed_pids_count = 0
     while processed_pids_count < len(all_pids_to_process):
         try:
-            print(f"Waiting for next PID data to be preloaded... (Queue size: {preloaded_data_queue.qsize()})")
+            print(
+                f"Waiting for next PID data to be preloaded... (Queue size: {preloaded_data_queue.qsize()})"
+            )
             preloaded_data = preloaded_data_queue.get()
             processed_pids_count += 1
-            print(f"Processing PID: {preloaded_data['pid']} ({processed_pids_count}/{len(all_pids_to_process)})")
+            print(
+                f"Processing PID: {preloaded_data['pid']} ({processed_pids_count}/{len(all_pids_to_process)})"
+            )
             process_pid(args, preloaded_data)
         except queue.Empty:
             print("Preloaded data queue is empty. Waiting for loaders to finish...")
             break
 
         if processed_pids_count < len(all_pids_to_process):
-            cont = input(f"Finished with PID {preloaded_data['pid']}. Press Enter to continue to next PID, or 'q' to quit: ")
-            if cont.lower() == 'q':
+            cont = input(
+                f"Finished with PID {preloaded_data['pid']}. Press Enter to continue to next PID, or 'q' to quit: "
+            )
+            if cont.lower() == "q":
                 break
 
     print("All PIDs processed or skipped.")
@@ -795,7 +857,9 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Browse image time series")
     parser.add_argument("config", help="Configuration file", metavar="PATH")
-    parser.add_argument("pid", help="ID(s) of point(s) to display", nargs='*', metavar="STR or INT")
+    parser.add_argument(
+        "pid", help="ID(s) of point(s) to display", nargs="*", metavar="STR or INT"
+    )
     parser.add_argument("--pattern", help="Raster file search pattern", metavar="STR")
     parser.add_argument(
         "--semilogy",
