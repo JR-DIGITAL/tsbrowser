@@ -92,7 +92,7 @@ class UiEventHandler:
             setattr(self, key, y.data)
 
     def on_pick(self, event):
-        i = event.ind.item(len(event.ind) // 2)
+        i = event.ind.item(0)
         if event.mouseevent.button == 3:
             self.toggle_flag_state(i, config["vars"].default_flag_label)
         elif event.mouseevent.button == 1:
