@@ -241,97 +241,82 @@ async def get_acquisition_date(
     return publish_date_str
 
 
-async def get_vhr(
-    lat,
-    lon,
-    zoom,
-    start_date: str = "1900-01-01",
-    remove_duplicates: bool = False,
-):
-    # temporary shim without network calls
-    import pickle
+async def get_vhr(lat: float, lon: float, zoom: int, start_date: str = '1900-01-01', remove_duplicates: bool = False) -> list[WaybackImageLayer]:
+    number_tiles = 3
+    available_layers = get_available_layer_ids(
+        lat, lon, zoom
+    )  # choosing slightly lower zoom, to get more available layers
+    # Set up an aiohttp session and a semaphore (limit to 10 concurrent requests).
+    async with aiohttp.ClientSession() as session:
+        semaphore = asyncio.Semaphore(10)
+        tasks = []
+        metadata_tasks = []
+        for layer in available_layers:
+            # Build the URL template for this layer.
+            url_template = (
+                f"https://wayback.maptiles.arcgis.com/arcgis/rest/services/world_imagery/MapServer/tile/"
+                f"{layer['layer_number']}/{{z}}/{{y}}/{{x}}"
+            )
+            metadata_tasks.append(
+                get_acquisition_date(lat, lon, layer["identifier"], session)
+            )
 
-    with open("test/vhr_example.pickle", "rb") as f:
-        vhr_data = pickle.load(f)
-    return vhr_data
-
-
-# async def get_vhr(lat: float, lon: float, zoom: int, start_date: str = '1900-01-01', remove_duplicates: bool = False) -> list[WaybackImageLayer]:
-#     number_tiles = 3
-#     available_layers = get_available_layer_ids(
-#         lat, lon, zoom
-#     )  # choosing slightly lower zoom, to get more available layers
-#     # Set up an aiohttp session and a semaphore (limit to 10 concurrent requests).
-#     async with aiohttp.ClientSession() as session:
-#         semaphore = asyncio.Semaphore(10)
-#         tasks = []
-#         metadata_tasks = []
-#         for layer in available_layers:
-#             # Build the URL template for this layer.
-#             url_template = (
-#                 f"https://wayback.maptiles.arcgis.com/arcgis/rest/services/world_imagery/MapServer/tile/"
-#                 f"{layer['layer_number']}/{{z}}/{{y}}/{{x}}"
-#             )
-#             metadata_tasks.append(
-#                 get_acquisition_date(lat, lon, layer["identifier"], session)
-#             )
-
-#         # Run all layer tasks concurrently.
-#         acquisition_dates = await asyncio.gather(*metadata_tasks)
-#         acquisitions_layers_sorted = sorted(zip(acquisition_dates, available_layers), reverse=True, key=lambda x: x[0])
-#         acquisitions_layers = []
-#         unique_acquisitions = set()
-#         for acquisition_date, layer in acquisitions_layers_sorted:
-#             if acquisition_date < start_date:
-#                 continue
-#             if (acquisition_date in unique_acquisitions) and remove_duplicates:
-#                 continue
-#             unique_acquisitions.add(acquisition_date)
-#             acquisitions_layers.append((acquisition_date, layer))
+        # Run all layer tasks concurrently.
+        acquisition_dates = await asyncio.gather(*metadata_tasks)
+        acquisitions_layers_sorted = sorted(zip(acquisition_dates, available_layers), reverse=True, key=lambda x: x[0])
+        acquisitions_layers = []
+        unique_acquisitions = set()
+        for acquisition_date, layer in acquisitions_layers_sorted:
+            if acquisition_date < start_date:
+                continue
+            if (acquisition_date in unique_acquisitions) and remove_duplicates:
+                continue
+            unique_acquisitions.add(acquisition_date)
+            acquisitions_layers.append((acquisition_date, layer))
 
 
-#         for _, layer in acquisitions_layers:
-#             # Build the URL template for this layer.
-#             url_template = (
-#                 f"https://wayback.maptiles.arcgis.com/arcgis/rest/services/world_imagery/MapServer/tile/"
-#                 f"{layer['layer_number']}/{{z}}/{{y}}/{{x}}"
-#             )
-#             tasks.append(
-#                 to_image(lat, lon, zoom, url_template, session, semaphore, number_tiles)
-#             )
-#         images = await asyncio.gather(*tasks)
+        for _, layer in acquisitions_layers:
+            # Build the URL template for this layer.
+            url_template = (
+                f"https://wayback.maptiles.arcgis.com/arcgis/rest/services/world_imagery/MapServer/tile/"
+                f"{layer['layer_number']}/{{z}}/{{y}}/{{x}}"
+            )
+            tasks.append(
+                to_image(lat, lon, zoom, url_template, session, semaphore, number_tiles)
+            )
+        images = await asyncio.gather(*tasks)
 
-#     offset_x, offset_y = latlon_to_tile_pixel(lat, lon, zoom)
+    offset_x, offset_y = latlon_to_tile_pixel(lat, lon, zoom)
 
-#     layers_with_images = []
-#     for (acquisition_date, layer), image in zip(acquisitions_layers, images):
-#         layers_with_images.append(
-#             WaybackImageLayer(
-#                 approximate_acquisition_date=acquisition_date,
-#                 image=image,
-#                 point_pixel_offset_xy=(
-#                     offset_x + (number_tiles // 2) * 256,
-#                     offset_y + (number_tiles // 2) * 256,
-#                 ),
-#                 **layer,
-#             )
-#         )
-#     # Return a dummy image, if nothing is returned
-#     if len(layers_with_images) == 0:
-#          layers_with_images.append(
-#             WaybackImageLayer(
-#                 approximate_acquisition_date='no data',
-#                 publish_date='no data',
-#                 image=Image.new("RGB", (number_tiles*256, number_tiles*256)),
-#                 point_pixel_offset_xy=(
-#                     offset_x + (number_tiles // 2) * 256,
-#                     offset_y + (number_tiles // 2) * 256,
-#                 ),
-#                 identifier="None",
-#                 layer_number=0
-#             )
-#         )
-#     return layers_with_images
+    layers_with_images = []
+    for (acquisition_date, layer), image in zip(acquisitions_layers, images):
+        layers_with_images.append(
+            WaybackImageLayer(
+                approximate_acquisition_date=acquisition_date,
+                image=image,
+                point_pixel_offset_xy=(
+                    offset_x + (number_tiles // 2) * 256,
+                    offset_y + (number_tiles // 2) * 256,
+                ),
+                **layer,
+            )
+        )
+    # Return a dummy image, if nothing is returned
+    if len(layers_with_images) == 0:
+         layers_with_images.append(
+            WaybackImageLayer(
+                approximate_acquisition_date='no data',
+                publish_date='no data',
+                image=Image.new("RGB", (number_tiles*256, number_tiles*256)),
+                point_pixel_offset_xy=(
+                    offset_x + (number_tiles // 2) * 256,
+                    offset_y + (number_tiles // 2) * 256,
+                ),
+                identifier="None",
+                layer_number=0
+            )
+        )
+    return layers_with_images
 
 
 if __name__ == "__main__":
