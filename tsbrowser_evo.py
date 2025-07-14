@@ -5,6 +5,7 @@ import math
 import os
 import gc
 import json
+import re
 import sys
 import queue
 import threading
@@ -87,8 +88,7 @@ class UiEventHandler:
         self.flags = dict()
         self.flag_val = dict()
         for key, band_name in iter(config["vars"].timeseries.items()):
-            layer_index = config["vars"].layermap[band_name]
-            y = ts.sel(band=layer_index).isel(x=len(ts.x) // 2, y=len(ts.x) // 2)
+            y = ts[band_name].isel(x=len(ts.x) // 2, y=len(ts.y) // 2)
             setattr(self, key, y.data)
 
     def on_pick(self, event):
@@ -239,33 +239,14 @@ def init_plots(args, ts, vhr_layer, ax):
     handles = dict()
     for ax_name, band_name in iter(config["vars"].timeseries.items()):
         # point timeseries is the point in the middle of the image (floored)
-        layer_index = config["vars"].layermap[band_name]
-        y = ts.sel(band=layer_index).isel(x=len(ts.x) // 2, y=len(ts.x) // 2)
+        # Replace each match with ts["match"]
+        y = ts[band_name].isel(x=len(ts.x) // 2, y=len(ts.y) // 2)
         ax[ax_name].plot(ts.time, y, "o", picker=5)
         handles[ax_name] = ax[ax_name].plot(
             ts.time[0], y[0], "o", fillstyle="none", markeredgewidth=2
         )[0]
         if args.semilogy:
             ax[ax_name].set_yscale("log")
-        # TODO: move helper function into codebase to enable this
-        # else:
-        #     if config["vars"].ylim[0] == "auto":
-        #         ymin = y.min().item()
-        #     else:
-        #         ymin = config["vars"].ylim[0]
-        #     if config["vars"].ylim[1] == "auto":
-        #         ymax = y.max().item()
-        #     else:
-        #         ymin = config["vars"].ylim[1]
-        #     lim = helpers.compute_axis_limits(
-        #         ymin,
-        #         ymax,
-        #         6,
-        #         upper_padding=0,
-        #         round_to_multiples_of=config["vars"].ytick_multiples,
-        #     )
-        #     ax[ax_name].set_ylim(lim[:2])
-        #     ax[ax_name].set_yticks(lim[2])
     # get first acquisition in the timeseries
     first_acquisition = ts.isel(time=0)
     for axis_name, band_combination in iter(config["vars"].images.items()):
@@ -338,11 +319,10 @@ def load_stack(files: list[Path], times: list[datetime], point, config):
 
 
 def prepare_rgb(ds, bands, vis):
-    band_indices = [config["vars"].layermap[band] for band in bands]
     lower_arr = np.array([vis[band][0] for band in bands])
     upper_arr = np.array([vis[band][1] for band in bands])
     img = (
-        ds.sel(band=band_indices).transpose("y", "x", "band") - lower_arr
+        ds[[*bands]].to_dataarray("band").transpose("y", "x", "band") - lower_arr
     ) / upper_arr
     out_img = img.clip(0, 1).values
     return out_img
@@ -552,9 +532,19 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
             config,
         )
 
-        # select appropriate bands
+        # select appropriate bands and convert to dataset
         selected_bands = list(config["vars"].layermap.values())
-        ts = ts.sel(band=selected_bands)
+        rename_dict = {v: k for k, v in config["vars"].layermap.items()}
+        ts = ts.sel(band=selected_bands).to_dataset("band").rename_vars(rename_dict)
+
+        # add any on the fly defined indices
+        for index_name, index_formula in config["vars"].indices.items():
+            # Replace each match with ts["match"]
+            pattern = (
+                r"\b(" + "|".join(re.escape(s) for s in rename_dict.values()) + r")\b"
+            )
+            result = re.sub(pattern, r'ts["\1"]', index_formula)
+            ts[index_name] = eval(result)
 
         # Fetch VHR data
         vhr_layers = asyncio.run(
@@ -575,30 +565,29 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
         # Calculate/set vis bounds
         vis = {}
         for band_name, val in iter(config["vars"].contrast.items()):
-            band_index = config["vars"].layermap[band_name]
             if isinstance(val, tuple):
                 lower, upper = val
             elif val == "mean_stddev":
-                mean = ts.sel(band=band_index).mean()
-                std = ts.sel(band=band_index).std()
+                mean = ts[band_name].mean()
+                std = ts[band_name].std()
                 N = config["vars"].std_factor
                 lower = mean - N * std
                 upper = mean + N * std
             elif val == "median_mad":
-                med = np.ma.median(ts.sel(band=band_index))
-                mad = np.ma.median(np.ma.fabs(ts.sel(band=band_index) - med))
+                med = np.ma.median(ts[band_name])
+                mad = np.ma.median(np.ma.fabs(ts[band_name] - med))
                 s = mad / 0.6745
                 N = config["vars"].std_factor
                 lower = med - N * s
                 upper = med + N * s
             elif val == "pct_clip":
                 lower = np.nanpercentile(
-                    ts.sel(band=band_index).filled(np.nan),
+                    ts[band_name].filled(np.nan),
                     config["vars"].pct_min,
                     method="lower",
                 )
                 upper = np.nanpercentile(
-                    ts.sel(band=band_index).filled(np.nan),
+                    ts[band_name].filled(np.nan),
                     config["vars"].pct_max,
                     method="higher",
                 )

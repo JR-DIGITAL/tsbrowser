@@ -241,7 +241,13 @@ async def get_acquisition_date(
     return publish_date_str
 
 
-async def get_vhr(lat: float, lon: float, zoom: int, start_date: str = '1900-01-01', remove_duplicates: bool = False) -> list[WaybackImageLayer]:
+async def get_vhr(
+    lat: float,
+    lon: float,
+    zoom: int,
+    start_date: str = "1900-01-01",
+    remove_duplicates: bool = False,
+) -> list[WaybackImageLayer]:
     number_tiles = 3
     available_layers = get_available_layer_ids(
         lat, lon, zoom
@@ -263,7 +269,9 @@ async def get_vhr(lat: float, lon: float, zoom: int, start_date: str = '1900-01-
 
         # Run all layer tasks concurrently.
         acquisition_dates = await asyncio.gather(*metadata_tasks)
-        acquisitions_layers_sorted = sorted(zip(acquisition_dates, available_layers), reverse=True, key=lambda x: x[0])
+        acquisitions_layers_sorted = sorted(
+            zip(acquisition_dates, available_layers), reverse=True, key=lambda x: x[0]
+        )
         acquisitions_layers = []
         unique_acquisitions = set()
         for acquisition_date, layer in acquisitions_layers_sorted:
@@ -273,7 +281,6 @@ async def get_vhr(lat: float, lon: float, zoom: int, start_date: str = '1900-01-
                 continue
             unique_acquisitions.add(acquisition_date)
             acquisitions_layers.append((acquisition_date, layer))
-
 
         for _, layer in acquisitions_layers:
             # Build the URL template for this layer.
@@ -303,17 +310,17 @@ async def get_vhr(lat: float, lon: float, zoom: int, start_date: str = '1900-01-
         )
     # Return a dummy image, if nothing is returned
     if len(layers_with_images) == 0:
-         layers_with_images.append(
+        layers_with_images.append(
             WaybackImageLayer(
-                approximate_acquisition_date='no data',
-                publish_date='no data',
-                image=Image.new("RGB", (number_tiles*256, number_tiles*256)),
+                approximate_acquisition_date="no data",
+                publish_date="no data",
+                image=Image.new("RGB", (number_tiles * 256, number_tiles * 256)),
                 point_pixel_offset_xy=(
                     offset_x + (number_tiles // 2) * 256,
                     offset_y + (number_tiles // 2) * 256,
                 ),
                 identifier="None",
-                layer_number=0
+                layer_number=0,
             )
         )
     return layers_with_images
