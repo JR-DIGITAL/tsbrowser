@@ -1,5 +1,8 @@
 import matplotlib.dates as mdates
 
+# set name of the interpreter
+interpreter = "Joe Doe"
+
 # set point sample vector file path
 path = "//digs110/fer/HR-VPP2/calibration/testing/test_setup_points.shp"
 

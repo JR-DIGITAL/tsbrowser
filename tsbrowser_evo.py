@@ -736,6 +736,7 @@ def process_pid(args, preloaded_data):
         "flags": flags,
         "confidence": confidence,
         "comment": comment,
+        "interpreter": config["vars"].interpreter,
     }
 
     with open(flags_file_path, "w") as flags_file:
