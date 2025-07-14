@@ -521,8 +521,15 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
             ts_q_bin = selected_band < config["vars"].threshold
         elif config["vars"].q_mode == "score":
             ts_q_bin = selected_band > config["vars"].threshold
-        elif config["vars"].q_mode == "scl":
-            ts_q_bin = ~selected_band.isin(config["vars"].masking_classes)
+        elif config["vars"].q_mode == "classes":
+            if config["vars"].masking_classes is not None and config["vars"].value_classes is not None:
+                raise ValueError("Cannot specify both masking_classes and value_classes")
+            if config["vars"].masking_classes is not None:
+                ts_q_bin = ~selected_band.isin(config["vars"].masking_classes)
+            elif config["vars"].value_classes is not None:
+                ts_q_bin = selected_band.isin(config["vars"].value_classes)
+            else:
+                raise ValueError("Either masking_classes or value_classes must be specified")
         overall_assessment = ts_q_bin.mean(dim=["x", "y"])
         row_slice = slice(
             len(q_stack.y) // 2 - config["vars"].specific_radius,
@@ -736,6 +743,7 @@ def process_pid(args, preloaded_data):
         "flags": flags,
         "confidence": confidence,
         "comment": comment,
+        "interpreter": config["vars"].interpreter,
     }
 
     with open(flags_file_path, "w") as flags_file:

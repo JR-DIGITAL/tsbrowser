@@ -1,5 +1,8 @@
 import matplotlib.dates as mdates
 
+# set name of the interpreter
+interpreter = "Joe Doe"
+
 # set point sample vector file path
 path = "//digs110/fer/HR-VPP2/calibration/testing/test_setup_points.shp"
 
@@ -26,8 +29,9 @@ t_slice = slice(4, 19)  # used if t_mode == filename
 t_format = "%Y%m%dT%H%M%S"  # used if t_mode == filename
 
 # set quality evaluation parameters
-q_mode = "scl"  # possible values: scl, oqb, score
-masking_classes = (0, 3, 8, 9, 11)  # used if mode == 'scl'
+q_mode = "score"  # possible values: classes, oqb, score
+masking_classes = (0, 3, 8, 9, 11)  # classes to mask (set to false) used if mode == 'scl'
+value_classes = None  # classes to keep (set to true), mutually exclusive with masking_classes used if mode == 'scl'
 q_band = 3  # used if mode == 'score'
 threshold = 250  # used if mode in ('oqb', 'score')
 overall_valid_ratio = 0.6
