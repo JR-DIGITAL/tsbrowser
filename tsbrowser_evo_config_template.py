@@ -54,7 +54,7 @@ indices = {
     "NDMI": "(B08 - B11) / (B08 + B11)",  # Normalized Difference Moisture Index
     #    "NDVI": "(B08 - B04) / (B08 + B04)",  # Normalized Difference Vegetation Index
     #    "NBR": "(B08 - B11) / (B08 + B11)",  # Normalized Burn Ratio
-    #    "TCW": " 0.1509*B02 + 0.1973*B03 + 0.3279*B04 + 0.3406*B08 - 0.7112*B11 - 0.4572*B12"
+    #    "TCW": " 0.0315*B02 + 0.2021*B03 + 0.3102*B04 + 0.1594*B08 - 0.6806*B11 - 0.6109*B12"
 }
 
 # configure which bands to display in the 3 time series sub-plots

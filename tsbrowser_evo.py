@@ -239,7 +239,6 @@ def init_plots(args, ts, vhr_layer, ax):
     handles = dict()
     for ax_name, band_name in iter(config["vars"].timeseries.items()):
         # point timeseries is the point in the middle of the image (floored)
-        # Replace each match with ts["match"]
         y = ts[band_name].isel(x=len(ts.x) // 2, y=len(ts.y) // 2)
         ax[ax_name].plot(ts.time, y, "o", picker=5)
         handles[ax_name] = ax[ax_name].plot(
