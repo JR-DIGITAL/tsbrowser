@@ -48,8 +48,17 @@ flag_dir = "//digs110/fer/HR-VPP2/calibration/testing/flags"
 # assign names to input bands
 layermap = {"B02": 1, "B03": 2, "B04": 3, "B08": 4, "B11": 9}
 
+# Indices which should be calculated on the fly
+# only simple arithmetic operations are supported (+,-,*,/)
+indices = {
+    "NDMI": "(B08 - B11) / (B08 + B11)",  # Normalized Difference Moisture Index
+    #    "NDVI": "(B08 - B04) / (B08 + B04)",  # Normalized Difference Vegetation Index
+    #    "NBR": "(B08 - B11) / (B08 + B11)",  # Normalized Burn Ratio
+    #    "TCW": " 0.0315*B02 + 0.2021*B03 + 0.3102*B04 + 0.1594*B08 - 0.6806*B11 - 0.6109*B12"
+}
+
 # configure which bands to display in the 3 time series sub-plots
-timeseries = {"ts_B1": "B04", "ts_B2": "B08", "ts_B3": "B11"}
+timeseries = {"ts_B1": "NDMI", "ts_B2": "B08", "ts_B3": "B11"}
 
 # configure which band combination to display in the 2 image sub-plots
 images = {"img_L": ("B04", "B03", "B02"), "img_R": ("B11", "B08", "B04")}
