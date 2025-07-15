@@ -29,11 +29,11 @@ t_slice = slice(4, 19)  # used if t_mode == filename
 t_format = "%Y%m%dT%H%M%S"  # used if t_mode == filename
 
 # set quality evaluation parameters
-q_mode = "score"  # possible values: classes, oqb, score
-masking_classes = (0, 3, 8, 9, 11)  # classes to mask (set to false) used if mode == 'scl'
-value_classes = None  # classes to keep (set to true), mutually exclusive with masking_classes used if mode == 'scl'
-q_band = 3  # used if mode == 'score'
-threshold = 250  # used if mode in ('oqb', 'score')
+q_mode = "threshold_gt"  # possible values: classes, threshold_lt, threshold_gt
+masking_classes = (0, 3, 8, 9, 11)  # classes to mask (set to false) used if mode == 'classes'
+valid_classes = None  # classes to keep (set to true), mutually exclusive with masking_classes used if mode == 'classes'
+q_band = 3  # used if mode == 'threshold_gt'
+threshold = 250  # used if mode in ('threshold_lt', 'threshold_gt')
 overall_valid_ratio = 0.6
 specific_radius = 9
 specific_valid_ratio = 0.8

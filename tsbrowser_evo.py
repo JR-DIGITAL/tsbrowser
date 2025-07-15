@@ -517,19 +517,19 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
 
         q_stack = load_stack(tif_lists["q"], t_common, point_reproj, config)
         selected_band = q_stack.sel(band=config["vars"].q_band)
-        if config["vars"].q_mode == "oqb":
+        if config["vars"].q_mode == "threshold_lt":
             ts_q_bin = selected_band < config["vars"].threshold
-        elif config["vars"].q_mode == "score":
+        elif config["vars"].q_mode == "threshold_gt":
             ts_q_bin = selected_band > config["vars"].threshold
         elif config["vars"].q_mode == "classes":
-            if config["vars"].masking_classes is not None and config["vars"].value_classes is not None:
-                raise ValueError("Cannot specify both masking_classes and value_classes")
+            if config["vars"].masking_classes is not None and config["vars"].valid_classes is not None:
+                raise ValueError("Cannot specify both masking_classes and valid_classes")
             if config["vars"].masking_classes is not None:
                 ts_q_bin = ~selected_band.isin(config["vars"].masking_classes)
-            elif config["vars"].value_classes is not None:
-                ts_q_bin = selected_band.isin(config["vars"].value_classes)
+            elif config["vars"].valid_classes is not None:
+                ts_q_bin = selected_band.isin(config["vars"].valid_classes)
             else:
-                raise ValueError("Either masking_classes or value_classes must be specified")
+                raise ValueError("Either masking_classes or valid_classes must be specified")
         overall_assessment = ts_q_bin.mean(dim=["x", "y"])
         row_slice = slice(
             len(q_stack.y) // 2 - config["vars"].specific_radius,
