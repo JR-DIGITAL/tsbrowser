@@ -23,6 +23,7 @@ import pandas as pd
 import rasterio
 import rioxarray
 import shapely
+import string
 import xarray as xr
 from pyproj import Transformer
 
@@ -87,15 +88,21 @@ class UiEventHandler:
         self.i_vhr = len(vhr_layers) - 1
         self.flags = dict()
         self.flag_val = dict()
+        self.t_extra = dict()   # used to display flags not tied to the current observation set
         for key, band_name in iter(config["vars"].timeseries.items()):
             y = ts[band_name].isel(x=len(ts.x) // 2, y=len(ts.y) // 2)
             setattr(self, key, y.data)
 
     def on_pick(self, event):
-        i = event.ind.item(0)
+        if event.artist.get_label().startswith('extra'):
+            i = event.artist.get_label()[-1]
+        elif event.artist.get_label().startswith('ts'):
+            i = int(event.artist.get_label().split('_')[1])
+        else:    
+            i = event.ind.item(0)
         if event.mouseevent.button == 3:
             self.toggle_flag_state(i, config["vars"].default_flag_label)
-        elif event.mouseevent.button == 1:
+        elif event.mouseevent.button == 1 and not isinstance(i, str):
             self.update(i)
 
     def on_key(self, event):
@@ -169,7 +176,7 @@ class UiEventHandler:
             fontsize="small",
         )
         self.i_vhr = i
-
+            
     def toggle_flag_state(self, i, label):
         if i in self.flags.keys():
             for line2d, ann in self.flags[i]:
@@ -177,19 +184,30 @@ class UiEventHandler:
                 ann.remove()
             del self.flags[i]
             del self.flag_val[i]
+            if isinstance(i, str):
+                del self.t_extra[i]
         else:
             self.flag_val[i] = label
             self.flags[i] = []
             for key in iter(config["vars"].timeseries.keys()):
-                y = getattr(self, key)
-                line2d = self.ax[key].plot(self.t[i], y[i], "x", color="r")[0]
+                if isinstance(i, str):
+                    line2d = self.ax[key].axvline(self.t_extra[i], 0.0, 0.85,
+                        color="tab:olive", zorder=1)
+                    ann_label = 'extra_{}'.format(i)
+                else:
+                    line2d = self.ax[key].axvline(self.t[i], 0.0, 0.85,
+                        color="tab:green", zorder=1)
+                    ann_label = 'ts_{}'.format(i)
                 ann = self.ax[key].annotate(
                     label,
-                    (self.t[i], y[i]),
-                    xytext=(0, 3),
+                    (0.0, 1.0),
+                    xytext=(0, 0),
+                    xycoords=line2d,
                     textcoords="offset points",
                     ha="center",
                     va="bottom",
+                    picker=5,
+                    label=ann_label,
                 )
                 self.flags[i].append((line2d, ann))
 
@@ -508,7 +526,9 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
             elif config["vars"].valid_classes is not None:
                 ts_q_bin = selected_band.isin(config["vars"].valid_classes)
             else:
-                raise ValueError("Either masking_classes or valid_classes must be specified")
+                raise ValueError("config error: either masking_classes or valid_classes must be specified")
+        else:
+            raise ValueError("config error: invalid parameter value for variable q_mode")
         overall_assessment = ts_q_bin.mean(dim=["x", "y"])
         row_slice = slice(
             len(q_stack.y) // 2 - config["vars"].specific_radius,
@@ -661,27 +681,35 @@ def process_pid(args, preloaded_data):
     add_patch_vhr(ax, *vhr_layers[0]["point_pixel_offset_xy"])
     EventHandler = UiEventHandler(args, ts, vhr_layers, ax, handles)
 
+    # Manage flags
     flag_val = None
-    flags_not_shown = []
-
+    letters = iter(string.ascii_lowercase)
+    ts_str_times = list(ts.time.dt.strftime("%Y-%m-%d %H:%M:%S.%f").values)
     if flag_val_datetime:
         flag_val = {}
-        for date_time, val in flag_val_datetime["flags"].items():
+        for dt_str, val in flag_val_datetime["flags"].items():
             try:
-                str_times = ts.time.dt.strftime("%Y-%m-%d").values
-                flag_index = list(str_times).index(date_time)
+                flag_index = ts_str_times.index(dt_str)
                 flag_val[flag_index] = val
             except ValueError:
-                flags_not_shown.append(f"{date_time}")
-    if flags_not_shown:
-        print(
-            f"\nFlags not shown for PID {current_pid}: {', '.join(flags_not_shown)}\n"
-        )  # Keep this print for immediate user feedback
+                extra_letter = next(letters)
+                flag_val[extra_letter] = val   # assign id for flag not tied to current obs set
+                EventHandler.t_extra[extra_letter] = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S.%f")
+                # for key in iter(config["vars"].timeseries.keys()):
+                    # EventHandler.y_extra[key][extra_letter] = 0.0
+                # flags_not_shown.append(f"{date_time}")
+    # if flags_not_shown:
+        # print(
+            # f"\nFlags not shown for PID {current_pid}: {', '.join(flags_not_shown)}\n"
+        # )  # Keep this print for immediate user feedback
 
     if flag_val is not None:
         EventHandler.set_flags(flag_val)
 
+    # Show oldest VHR image in figure
     EventHandler.update_vhr(len(vhr_layers) - 1)
+    
+    # Register event callbacks
     fig.canvas.mpl_connect("pick_event", EventHandler.on_pick)
     fig.canvas.mpl_connect("key_press_event", EventHandler.on_key)
     fig.canvas.mpl_connect("scroll_event", EventHandler.on_scroll)
@@ -719,12 +747,13 @@ def process_pid(args, preloaded_data):
     ).strip()
     comment = comment_input or previous_comment
 
-    # Save flags as before
-    str_times = ts.time.dt.strftime("%Y-%m-%d").values
-    flags = {
-        str_times[flag_index]: flag_value
-        for flag_index, flag_value in EventHandler.flag_val.items()
-    }
+    # Save current flag status from EventHandler
+    flags = dict()
+    for flag_index, flag_value in EventHandler.flag_val.items():
+        if isinstance(flag_index, str):
+            flags[EventHandler.t_extra[flag_index].strftime("%Y-%m-%d %H:%M:%S.%f")] = flag_value
+        else:
+            flags[ts_str_times[flag_index]] = flag_value
 
     # Add confidence and comment to the saved data
     output_data = {
@@ -854,7 +883,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Browse image time series")
     parser.add_argument("config", help="Configuration file", metavar="PATH")
     parser.add_argument(
-        "pid", help="ID(s) of point(s) to display", nargs="*", metavar="STR or INT"
+        "--pid",
+        help="ID(s) of point(s) to display",
+        nargs="*",
+        metavar="STR or INT",
     )
     parser.add_argument("--pattern", help="Raster file search pattern", metavar="STR")
     parser.add_argument(
