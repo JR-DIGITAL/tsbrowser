@@ -3,7 +3,7 @@ name = "tsbrowser"
 version = "0.1.0"
 description = "Timeseries Browser for Sentinel-2 data analysis and labeling"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "aiohttp>=3.12.13",
     "dask>=2024.8.0",
