@@ -1,7 +1,7 @@
 [project]
-name = "s2-timeseries-labeller"
+name = "tsbrowser"
 version = "0.1.0"
-description = "Add your description here"
+description = "Timeseries Browser for Sentinel-2 data analysis and labeling"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
@@ -15,6 +15,13 @@ dependencies = [
     "rioxarray>=0.15.0",
     "xmltodict>=0.14.2",
 ]
+
+[project.scripts]
+tsbrowser = "tsbrowser.cli:main"
+
+[build-system]
+requires = ["setuptools>=64,<76", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [tool.ruff.lint]
 extend-select = [
@@ -34,4 +41,9 @@ extend-select = [
     "PTH",      # Use pathlib instead of os.path
     "TD",       # Be diligent with TODO comments
     "NPY",      # Some numpy-specific things
+]
+
+[dependency-groups]
+dev = [
+    "mkdocs-material>=9.6.15",
 ]

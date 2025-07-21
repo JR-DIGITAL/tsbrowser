@@ -27,7 +27,7 @@ import string
 import xarray as xr
 from pyproj import Transformer
 
-from vhr import get_vhr
+from .vhr import get_vhr
 
 prompt = "--> "
 flag_labels = set(map(str, range(10)))
