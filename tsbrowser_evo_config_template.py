@@ -30,7 +30,13 @@ t_format = "%Y%m%dT%H%M%S"  # used if t_mode == filename
 
 # set quality evaluation parameters
 q_mode = "threshold_gt"  # possible values: classes, threshold_lt, threshold_gt
-masking_classes = (0, 3, 8, 9, 11)  # classes to mask (set to false) used if mode == 'classes'
+masking_classes = (
+    0,
+    3,
+    8,
+    9,
+    11,
+)  # classes to mask (set to false) used if mode == 'classes'
 valid_classes = None  # classes to keep (set to true), mutually exclusive with masking_classes used if mode == 'classes'
 q_band = 3  # used if mode == 'threshold_gt'
 threshold = 250  # used if mode in ('threshold_lt', 'threshold_gt')

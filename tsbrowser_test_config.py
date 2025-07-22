@@ -1,5 +1,8 @@
 import matplotlib.dates as mdates
 
+# give name of the interpreter
+interpreter = "Joe Doe"
+
 # set point sample vector file path
 path = "/home/jonas/Documents/Projects/2025/s2-timeseries-labeller/test/test_shp.shp"
 
@@ -27,7 +30,13 @@ t_format = "%Y%m%dT%H%M%S"  # used if t_mode == filename
 
 # set quality evaluation parameters
 q_mode = "classes"  # possible values: classes, threshold_lt, threshold_gt
-masking_classes = (0, 3, 8, 9, 11)  # classes to mask (set to false) used if mode == 'classes'
+masking_classes = (
+    0,
+    3,
+    8,
+    9,
+    11,
+)  # classes to mask (set to false) used if mode == 'classes'
 valid_classes = None  # classes to keep (set to true), mutually exclusive with masking_classes used if mode == 'classes'
 q_band = 3  # used if mode == 'threshold_gt'
 threshold = 250  # used if mode in ('threshold_lt', 'threshold_gt')
@@ -44,10 +53,29 @@ add_flag_labels = "a b c d e f g h".split()
 flag_dir = "/home/jonas/Documents/Projects/2025/s2-timeseries-labeller/test/flags"
 
 # assign names to input bands
-layermap = {"B02": 1, "B03": 2, "B04": 3, "B08": 4, "B11": 9}
+layermap = {
+    "B02": 1,
+    "B03": 2,
+    "B04": 3,
+    "B08": 4,
+    "B11": 9,
+    "TCW": 11,
+    "Q1": 12,
+    "Q2": 13,
+}
+
+# Indices
+# Indices which should be calculated on the fly, only simple arithmetic operations are supported (+,-,*,/)
+indices = {
+    "NDMI": "(B08 - B11) / (B08 + B11)",  # Normalized Difference Moisture Index
+    #    "NDVI": "(B08 - B04) / (B08 + B04)",  # Normalized Difference Vegetation Index
+    #    "NBR": "(B08 - B11) / (B08 + B11)",  # Normalized Burn Ratio
+    #    "TCW": " 0.0315*B02 + 0.2021*B03 + 0.3102*B04 + 0.1594*B08 - 0.6806*B11 - 0.6109*B12"
+}
+
 
 # configure which bands to display in the 3 time series sub-plots
-timeseries = {"ts_B1": "B04", "ts_B2": "B08", "ts_B3": "B11"}
+timeseries = {"ts_B1": "NDMI", "ts_B2": "B08", "ts_B3": "B11"}
 
 # configure which band combination to display in the 2 image sub-plots
 images = {"img_L": ("B04", "B03", "B02"), "img_R": ("B11", "B08", "B04")}

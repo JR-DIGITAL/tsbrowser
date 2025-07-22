@@ -88,17 +88,18 @@ class UiEventHandler:
         self.i_vhr = len(vhr_layers) - 1
         self.flags = dict()
         self.flag_val = dict()
-        self.t_extra = dict()   # used to display flags not tied to the current observation set
+        # used to display flags not tied to the current observation set
+        self.t_extra = dict()  
         for key, band_name in iter(config["vars"].timeseries.items()):
             y = ts[band_name].isel(x=len(ts.x) // 2, y=len(ts.y) // 2)
             setattr(self, key, y.data)
 
     def on_pick(self, event):
-        if event.artist.get_label().startswith('extra'):
+        if event.artist.get_label().startswith("extra"):
             i = event.artist.get_label()[-1]
-        elif event.artist.get_label().startswith('ts'):
-            i = int(event.artist.get_label().split('_')[1])
-        else:    
+        elif event.artist.get_label().startswith("ts"):
+            i = int(event.artist.get_label().split("_")[1])
+        else:
             i = event.ind.item(0)
         if event.mouseevent.button == 3:
             self.toggle_flag_state(i, config["vars"].default_flag_label)
@@ -176,7 +177,7 @@ class UiEventHandler:
             fontsize="small",
         )
         self.i_vhr = i
-            
+
     def toggle_flag_state(self, i, label):
         if i in self.flags.keys():
             for line2d, ann in self.flags[i]:
@@ -191,13 +192,15 @@ class UiEventHandler:
             self.flags[i] = []
             for key in iter(config["vars"].timeseries.keys()):
                 if isinstance(i, str):
-                    line2d = self.ax[key].axvline(self.t_extra[i], 0.0, 0.85,
-                        color="tab:olive", zorder=1)
-                    ann_label = 'extra_{}'.format(i)
+                    line2d = self.ax[key].axvline(
+                        self.t_extra[i], 0.0, 0.85, color="tab:olive", zorder=1
+                    )
+                    ann_label = "extra_{}".format(i)
                 else:
-                    line2d = self.ax[key].axvline(self.t[i], 0.0, 0.85,
-                        color="tab:green", zorder=1)
-                    ann_label = 'ts_{}'.format(i)
+                    line2d = self.ax[key].axvline(
+                        self.t[i], 0.0, 0.85, color="tab:green", zorder=1
+                    )
+                    ann_label = "ts_{}".format(i)
                 ann = self.ax[key].annotate(
                     label,
                     (0.0, 1.0),
@@ -519,16 +522,25 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
         elif config["vars"].q_mode == "threshold_gt":
             ts_q_bin = selected_band > config["vars"].threshold
         elif config["vars"].q_mode == "classes":
-            if config["vars"].masking_classes is not None and config["vars"].valid_classes is not None:
-                raise ValueError("Cannot specify both masking_classes and valid_classes")
+            if (
+                config["vars"].masking_classes is not None
+                and config["vars"].valid_classes is not None
+            ):
+                raise ValueError(
+                    "Cannot specify both masking_classes and valid_classes"
+                )
             if config["vars"].masking_classes is not None:
                 ts_q_bin = ~selected_band.isin(config["vars"].masking_classes)
             elif config["vars"].valid_classes is not None:
                 ts_q_bin = selected_band.isin(config["vars"].valid_classes)
             else:
-                raise ValueError("config error: either masking_classes or valid_classes must be specified")
+                raise ValueError(
+                    "config error: either masking_classes or valid_classes must be specified"
+                )
         else:
-            raise ValueError("config error: invalid parameter value for variable q_mode")
+            raise ValueError(
+                "config error: invalid parameter value for variable q_mode"
+            )
         overall_assessment = ts_q_bin.mean(dim=["x", "y"])
         row_slice = slice(
             len(q_stack.y) // 2 - config["vars"].specific_radius,
@@ -693,22 +705,19 @@ def process_pid(args, preloaded_data):
                 flag_val[flag_index] = val
             except ValueError:
                 extra_letter = next(letters)
-                flag_val[extra_letter] = val   # assign id for flag not tied to current obs set
-                EventHandler.t_extra[extra_letter] = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S.%f")
-                # for key in iter(config["vars"].timeseries.keys()):
-                    # EventHandler.y_extra[key][extra_letter] = 0.0
-                # flags_not_shown.append(f"{date_time}")
-    # if flags_not_shown:
-        # print(
-            # f"\nFlags not shown for PID {current_pid}: {', '.join(flags_not_shown)}\n"
-        # )  # Keep this print for immediate user feedback
+                flag_val[extra_letter] = (
+                    val  # assign id for flag not tied to current obs set
+                )
+                EventHandler.t_extra[extra_letter] = datetime.strptime(
+                    dt_str, "%Y-%m-%d %H:%M:%S.%f"
+                )
 
     if flag_val is not None:
         EventHandler.set_flags(flag_val)
 
     # Show oldest VHR image in figure
     EventHandler.update_vhr(len(vhr_layers) - 1)
-    
+
     # Register event callbacks
     fig.canvas.mpl_connect("pick_event", EventHandler.on_pick)
     fig.canvas.mpl_connect("key_press_event", EventHandler.on_key)
@@ -751,7 +760,9 @@ def process_pid(args, preloaded_data):
     flags = dict()
     for flag_index, flag_value in EventHandler.flag_val.items():
         if isinstance(flag_index, str):
-            flags[EventHandler.t_extra[flag_index].strftime("%Y-%m-%d %H:%M:%S.%f")] = flag_value
+            flags[EventHandler.t_extra[flag_index].strftime("%Y-%m-%d %H:%M:%S.%f")] = (
+                flag_value
+            )
         else:
             flags[ts_str_times[flag_index]] = flag_value
 
@@ -877,8 +888,6 @@ def run_tsbrowser(args):
 
     print("All PIDs processed or skipped.")
     return 0
-
-
 
 
 def main():
