@@ -6,6 +6,10 @@ interpreter = "Joe Doe"
 # set point sample vector file path
 path = "/home/jonas/Documents/Projects/2025/s2-timeseries-labeller/test/test_shp.shp"
 
+# set an output directory to store flag files
+# if None, write to the shapefile directory
+flag_dir = "/home/jonas/Documents/Projects/2025/s2-timeseries-labeller/test/flags"
+
 # define required attribute names
 legacy_mode = False  # if True, the program expects pre-processed image chips and all
 # parameters regarding on-the-fly quality evaluation are ignored
@@ -47,10 +51,6 @@ specific_valid_ratio = 0.8
 # define the flag label set with a right mouse button click
 default_flag_label = "0"
 add_flag_labels = "a b c d e f g h".split()
-
-# set an output directory to store flag files (pickle format)
-# if None, write to the shapefile directory
-flag_dir = "/home/jonas/Documents/Projects/2025/s2-timeseries-labeller/test/flags"
 
 # assign names to input bands
 layermap = {
