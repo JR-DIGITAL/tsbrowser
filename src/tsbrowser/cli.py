@@ -771,7 +771,7 @@ def process_pid(args, preloaded_data):
     gc.collect()
 
 
-def main(args):
+def run_tsbrowser(args):
     # Load config variables
     load_config(args.config)
     flag_labels.update(config["vars"].add_flag_labels)
@@ -879,7 +879,10 @@ def main(args):
     return 0
 
 
-if __name__ == "__main__":
+
+
+def main():
+    """Entry point for the tsbrowser console script."""
     parser = argparse.ArgumentParser(description="Browse image time series")
     parser.add_argument("config", help="Configuration file", metavar="PATH")
     parser.add_argument(
@@ -922,4 +925,4 @@ if __name__ == "__main__":
         metavar="INT",
     )
     args = parser.parse_args()
-    main(args)
+    return run_tsbrowser(args)
