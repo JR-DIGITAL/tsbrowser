@@ -2,14 +2,13 @@ import argparse
 import asyncio
 import importlib
 import math
-import os
 import gc
 import json
 import re
 import sys
 import queue
 import threading
-import logging  # Import the logging module
+import logging
 from datetime import datetime
 from itertools import compress
 from pathlib import Path
@@ -65,10 +64,11 @@ logger.addHandler(file_handler)
 
 
 def load_config(sConfigFile):
-    if os.path.exists(sConfigFile):
-        sDirname, sBasename = os.path.split(sConfigFile)
-        sys.path.append(sDirname)
-        sModule = sBasename.replace(".py", "")
+    config_path = Path(sConfigFile)
+    if config_path.exists():
+        config_dir = config_path.parent
+        sys.path.append(str(config_dir))
+        sModule = config_path.stem
         config["vars"] = importlib.import_module(sModule)
     else:
         raise RuntimeError("The given configuration file does not exist")
@@ -399,6 +399,8 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
         if not config["vars"].legacy_mode:
             # get quality files
             data_dir_q = Path(sample_series[config["vars"].attr_q_loc])
+            if not data_dir_q.is_absolute():
+                data_dir_q = args.geom_path.parent / data_dir_q
             if not data_dir_q.exists():
                 logger.warning(
                     f"Raster quality directory does not exist: {data_dir_q} for PID {current_pid}"
@@ -412,6 +414,8 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
 
         # Get image input directory
         data_dir = Path(sample_series[config["vars"].attr_i_loc])
+        if not data_dir_q.is_absolute():
+            data_dir = args.geom_path.parent / data_dir
         if not data_dir.exists():
             logger.warning(
                 f"Raster data directory does not exist: {data_dir} for PID {current_pid}"
@@ -645,16 +649,15 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
 
         # Load possibly existing flag values
         if config["vars"].flag_dir is None:
-            flag_dir = os.path.dirname(config["vars"].path)
+            flag_dir = args.geom_path.parent
         else:
-            if os.path.exists(config["vars"].flag_dir):
-                flag_dir = config["vars"].flag_dir
-            else:
-                raise RuntimeError("Output directory for flag files does not exist")
-        flags_file_path = os.path.join(flag_dir, f"flags_{current_pid}.json")
+            flag_dir = Path(config["vars"].flag_dir)
+            if not flag_dir.is_absolute():
+                flag_dir = Path(args.config).parent / flag_dir
+        flags_file_path = flag_dir / f"flags_{current_pid}.json"
 
         flag_val_datetime = {}
-        if os.path.exists(flags_file_path):
+        if flags_file_path.exists():
             with open(flags_file_path, "r") as flags_file:
                 flag_val_datetime = json.load(flags_file)
 
@@ -806,7 +809,14 @@ def run_tsbrowser(args):
     logger.addHandler(new_file_handler)
 
     # Load vector file once
-    geom_df = gpd.read_file(Path(config["vars"].path))
+    geom_path = Path(config["vars"].path)
+    if geom_path.is_absolute():
+        geom_df = gpd.read_file(geom_path)
+    else:
+        # If the path is relative, construct it relative to the config directory
+        geom_path = config_dir / geom_path
+        geom_df = gpd.read_file(geom_path)
+    args.geom_path = geom_path
 
     all_pids_to_process = []
     if not args.pid:
@@ -814,14 +824,15 @@ def run_tsbrowser(args):
         all_pids = geom_df[config["vars"].attr_id].astype(str).tolist()
 
         if config["vars"].flag_dir is None:
-            flag_dir = os.path.dirname(config["vars"].path)
+            flag_dir = args.geom_path.parent
         else:
-            flag_dir = config["vars"].flag_dir
+            flag_dir = Path(config["vars"].flag_dir)
+            if not flag_dir.is_absolute():
+                flag_dir = Path(args.config).parent / flag_dir
 
         existing_flags = {
-            f[len("flags_") : -len(".json")]
-            for f in os.listdir(flag_dir)
-            if f.startswith("flags_") and f.endswith(".json")
+            f.stem[len("flags_") : ]
+            for f in flag_dir.glob("flags_*.json")
         }
 
         all_pids_to_process = [
