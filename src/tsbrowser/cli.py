@@ -2,14 +2,13 @@ import argparse
 import asyncio
 import importlib
 import math
-import os
 import gc
 import json
 import re
 import sys
 import queue
 import threading
-import logging  # Import the logging module
+import logging
 from datetime import datetime
 from itertools import compress
 from pathlib import Path
@@ -27,7 +26,7 @@ import string
 import xarray as xr
 from pyproj import Transformer
 
-from vhr import get_vhr
+from .vhr import get_vhr
 
 prompt = "--> "
 flag_labels = set(map(str, range(10)))
@@ -65,10 +64,11 @@ logger.addHandler(file_handler)
 
 
 def load_config(sConfigFile):
-    if os.path.exists(sConfigFile):
-        sDirname, sBasename = os.path.split(sConfigFile)
-        sys.path.append(sDirname)
-        sModule = sBasename.replace(".py", "")
+    config_path = Path(sConfigFile)
+    if config_path.exists():
+        config_dir = config_path.parent
+        sys.path.append(str(config_dir))
+        sModule = config_path.stem
         config["vars"] = importlib.import_module(sModule)
     else:
         raise RuntimeError("The given configuration file does not exist")
@@ -88,17 +88,18 @@ class UiEventHandler:
         self.i_vhr = len(vhr_layers) - 1
         self.flags = dict()
         self.flag_val = dict()
-        self.t_extra = dict()   # used to display flags not tied to the current observation set
+        # used to display flags not tied to the current observation set
+        self.t_extra = dict()  
         for key, band_name in iter(config["vars"].timeseries.items()):
             y = ts[band_name].isel(x=len(ts.x) // 2, y=len(ts.y) // 2)
             setattr(self, key, y.data)
 
     def on_pick(self, event):
-        if event.artist.get_label().startswith('extra'):
+        if event.artist.get_label().startswith("extra"):
             i = event.artist.get_label()[-1]
-        elif event.artist.get_label().startswith('ts'):
-            i = int(event.artist.get_label().split('_')[1])
-        else:    
+        elif event.artist.get_label().startswith("ts"):
+            i = int(event.artist.get_label().split("_")[1])
+        else:
             i = event.ind.item(0)
         if event.mouseevent.button == 3:
             self.toggle_flag_state(i, config["vars"].default_flag_label)
@@ -176,7 +177,7 @@ class UiEventHandler:
             fontsize="small",
         )
         self.i_vhr = i
-            
+
     def toggle_flag_state(self, i, label):
         if i in self.flags.keys():
             for line2d, ann in self.flags[i]:
@@ -191,13 +192,15 @@ class UiEventHandler:
             self.flags[i] = []
             for key in iter(config["vars"].timeseries.keys()):
                 if isinstance(i, str):
-                    line2d = self.ax[key].axvline(self.t_extra[i], 0.0, 0.85,
-                        color="tab:olive", zorder=1)
-                    ann_label = 'extra_{}'.format(i)
+                    line2d = self.ax[key].axvline(
+                        self.t_extra[i], 0.0, 0.85, color="tab:olive", zorder=1
+                    )
+                    ann_label = "extra_{}".format(i)
                 else:
-                    line2d = self.ax[key].axvline(self.t[i], 0.0, 0.85,
-                        color="tab:green", zorder=1)
-                    ann_label = 'ts_{}'.format(i)
+                    line2d = self.ax[key].axvline(
+                        self.t[i], 0.0, 0.85, color="tab:green", zorder=1
+                    )
+                    ann_label = "ts_{}".format(i)
                 ann = self.ax[key].annotate(
                     label,
                     (0.0, 1.0),
@@ -396,6 +399,8 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
         if not config["vars"].legacy_mode:
             # get quality files
             data_dir_q = Path(sample_series[config["vars"].attr_q_loc])
+            if not data_dir_q.is_absolute():
+                data_dir_q = args.geom_path.parent / data_dir_q
             if not data_dir_q.exists():
                 logger.warning(
                     f"Raster quality directory does not exist: {data_dir_q} for PID {current_pid}"
@@ -409,6 +414,8 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
 
         # Get image input directory
         data_dir = Path(sample_series[config["vars"].attr_i_loc])
+        if not data_dir_q.is_absolute():
+            data_dir = args.geom_path.parent / data_dir
         if not data_dir.exists():
             logger.warning(
                 f"Raster data directory does not exist: {data_dir} for PID {current_pid}"
@@ -519,16 +526,25 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
         elif config["vars"].q_mode == "threshold_gt":
             ts_q_bin = selected_band > config["vars"].threshold
         elif config["vars"].q_mode == "classes":
-            if config["vars"].masking_classes is not None and config["vars"].valid_classes is not None:
-                raise ValueError("Cannot specify both masking_classes and valid_classes")
+            if (
+                config["vars"].masking_classes is not None
+                and config["vars"].valid_classes is not None
+            ):
+                raise ValueError(
+                    "Cannot specify both masking_classes and valid_classes"
+                )
             if config["vars"].masking_classes is not None:
                 ts_q_bin = ~selected_band.isin(config["vars"].masking_classes)
             elif config["vars"].valid_classes is not None:
                 ts_q_bin = selected_band.isin(config["vars"].valid_classes)
             else:
-                raise ValueError("config error: either masking_classes or valid_classes must be specified")
+                raise ValueError(
+                    "config error: either masking_classes or valid_classes must be specified"
+                )
         else:
-            raise ValueError("config error: invalid parameter value for variable q_mode")
+            raise ValueError(
+                "config error: invalid parameter value for variable q_mode"
+            )
         overall_assessment = ts_q_bin.mean(dim=["x", "y"])
         row_slice = slice(
             len(q_stack.y) // 2 - config["vars"].specific_radius,
@@ -633,16 +649,15 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
 
         # Load possibly existing flag values
         if config["vars"].flag_dir is None:
-            flag_dir = os.path.dirname(config["vars"].path)
+            flag_dir = args.geom_path.parent
         else:
-            if os.path.exists(config["vars"].flag_dir):
-                flag_dir = config["vars"].flag_dir
-            else:
-                raise RuntimeError("Output directory for flag files does not exist")
-        flags_file_path = os.path.join(flag_dir, f"flags_{current_pid}.json")
+            flag_dir = Path(config["vars"].flag_dir)
+            if not flag_dir.is_absolute():
+                flag_dir = Path(args.config).parent / flag_dir
+        flags_file_path = flag_dir / f"flags_{current_pid}.json"
 
         flag_val_datetime = {}
-        if os.path.exists(flags_file_path):
+        if flags_file_path.exists():
             with open(flags_file_path, "r") as flags_file:
                 flag_val_datetime = json.load(flags_file)
 
@@ -693,22 +708,19 @@ def process_pid(args, preloaded_data):
                 flag_val[flag_index] = val
             except ValueError:
                 extra_letter = next(letters)
-                flag_val[extra_letter] = val   # assign id for flag not tied to current obs set
-                EventHandler.t_extra[extra_letter] = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S.%f")
-                # for key in iter(config["vars"].timeseries.keys()):
-                    # EventHandler.y_extra[key][extra_letter] = 0.0
-                # flags_not_shown.append(f"{date_time}")
-    # if flags_not_shown:
-        # print(
-            # f"\nFlags not shown for PID {current_pid}: {', '.join(flags_not_shown)}\n"
-        # )  # Keep this print for immediate user feedback
+                flag_val[extra_letter] = (
+                    val  # assign id for flag not tied to current obs set
+                )
+                EventHandler.t_extra[extra_letter] = datetime.strptime(
+                    dt_str, "%Y-%m-%d %H:%M:%S.%f"
+                )
 
     if flag_val is not None:
         EventHandler.set_flags(flag_val)
 
     # Show oldest VHR image in figure
     EventHandler.update_vhr(len(vhr_layers) - 1)
-    
+
     # Register event callbacks
     fig.canvas.mpl_connect("pick_event", EventHandler.on_pick)
     fig.canvas.mpl_connect("key_press_event", EventHandler.on_key)
@@ -751,7 +763,9 @@ def process_pid(args, preloaded_data):
     flags = dict()
     for flag_index, flag_value in EventHandler.flag_val.items():
         if isinstance(flag_index, str):
-            flags[EventHandler.t_extra[flag_index].strftime("%Y-%m-%d %H:%M:%S.%f")] = flag_value
+            flags[EventHandler.t_extra[flag_index].strftime("%Y-%m-%d %H:%M:%S.%f")] = (
+                flag_value
+            )
         else:
             flags[ts_str_times[flag_index]] = flag_value
 
@@ -771,7 +785,7 @@ def process_pid(args, preloaded_data):
     gc.collect()
 
 
-def main(args):
+def run_tsbrowser(args):
     # Load config variables
     load_config(args.config)
     flag_labels.update(config["vars"].add_flag_labels)
@@ -795,7 +809,14 @@ def main(args):
     logger.addHandler(new_file_handler)
 
     # Load vector file once
-    geom_df = gpd.read_file(Path(config["vars"].path))
+    geom_path = Path(config["vars"].path)
+    if geom_path.is_absolute():
+        geom_df = gpd.read_file(geom_path)
+    else:
+        # If the path is relative, construct it relative to the config directory
+        geom_path = config_dir / geom_path
+        geom_df = gpd.read_file(geom_path)
+    args.geom_path = geom_path
 
     all_pids_to_process = []
     if not args.pid:
@@ -803,14 +824,15 @@ def main(args):
         all_pids = geom_df[config["vars"].attr_id].astype(str).tolist()
 
         if config["vars"].flag_dir is None:
-            flag_dir = os.path.dirname(config["vars"].path)
+            flag_dir = args.geom_path.parent
         else:
-            flag_dir = config["vars"].flag_dir
+            flag_dir = Path(config["vars"].flag_dir)
+            if not flag_dir.is_absolute():
+                flag_dir = Path(args.config).parent / flag_dir
 
         existing_flags = {
-            f[len("flags_") : -len(".json")]
-            for f in os.listdir(flag_dir)
-            if f.startswith("flags_") and f.endswith(".json")
+            f.stem[len("flags_") : ]
+            for f in flag_dir.glob("flags_*.json")
         }
 
         all_pids_to_process = [
@@ -879,7 +901,8 @@ def main(args):
     return 0
 
 
-if __name__ == "__main__":
+def main():
+    """Entry point for the tsbrowser console script."""
     parser = argparse.ArgumentParser(description="Browse image time series")
     parser.add_argument("config", help="Configuration file", metavar="PATH")
     parser.add_argument(
@@ -922,4 +945,4 @@ if __name__ == "__main__":
         metavar="INT",
     )
     args = parser.parse_args()
-    main(args)
+    return run_tsbrowser(args)
