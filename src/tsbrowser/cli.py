@@ -350,11 +350,8 @@ def prepare_rgb(ds, bands, vis):
 
 # New function to load data for a single PID and put it into the queue
 def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
-    while True:
-        try:
-            current_pid = pid_queue.get(timeout=1)
-        except queue.Empty:
-            break
+    while not pid_queue.empty():
+        current_pid = pid_queue.get(timeout=1)
 
         logger.info(
             f"Preloading data for PID: {current_pid}"
@@ -744,23 +741,26 @@ def process_pid(args, preloaded_data):
     )
 
     print(f"Interpretation for point {current_pid}:")
-    confidence_input = (
-        input(
-            f"Enter interpretation confidence (high/h, medium/m, low/l){confidence_str}: "
+    try:
+        confidence_input = (
+            input(
+                f"Enter interpretation confidence (high/h, medium/m, low/l){confidence_str}: "
+            )
+            .strip()
+            .lower()
         )
-        .strip()
-        .lower()
-    )
-    confidence = confidence_input or previous_confidence
-    while confidence not in {"high", "medium", "low", "h", "m", "l", None}:
-        confidence = input("Please enter 'high', 'medium', or 'low': ").strip().lower()
-    if confidence in {"h", "m", "l"}:
-        confidence = {"h": "high", "m": "medium", "l": "low"}[confidence]
+        confidence = confidence_input or previous_confidence
+        while confidence not in {"high", "medium", "low", "h", "m", "l", None}:
+            confidence = input("Please enter 'high', 'medium', or 'low': ").strip().lower()
+        if confidence in {"h", "m", "l"}:
+            confidence = {"h": "high", "m": "medium", "l": "low"}[confidence]
 
-    comment_input = input(
-        f"Enter any comment about the interpretation{comment_str}: "
-    ).strip()
-    comment = comment_input or previous_comment
+        comment_input = input(
+            f"Enter any comment about the interpretation{comment_str}: "
+        ).strip()
+        comment = comment_input or previous_comment
+    except EOFError:
+        return
 
     # Save current flag status from EventHandler
     flags = dict()
@@ -878,19 +878,19 @@ def run_tsbrowser(args):
         thread.start()
 
     processed_pids_count = 0
-    while processed_pids_count < len(all_pids_to_process):
+    print(f"Waiting for next PID data to be preloaded...")
+    while not pid_queue.empty() or not preloaded_data_queue.empty():
         try:
-            print(
-                f"Waiting for next PID data to be preloaded... (Queue size: {preloaded_data_queue.qsize()})"
-            )
-            preloaded_data = preloaded_data_queue.get()
-            processed_pids_count += 1
-            print(
-                f"Processing PID: {preloaded_data['pid']} ({processed_pids_count}/{len(all_pids_to_process)})"
-            )
-            process_pid(args, preloaded_data)
+            preloaded_data = preloaded_data_queue.get(timeout=1)
         except queue.Empty:
-            print("Preloaded data queue is empty. Waiting for loaders to finish...")
+            continue
+        processed_pids_count += 1
+        print(
+            f"Processing PID: {preloaded_data['pid']} ({processed_pids_count}/{len(all_pids_to_process)})"
+        )
+        try:
+            process_pid(args, preloaded_data)
+        except KeyboardInterrupt:
             break
 
         if processed_pids_count < len(all_pids_to_process):
@@ -899,6 +899,7 @@ def run_tsbrowser(args):
             )
             if cont.lower() == "q":
                 break
+            print(f"Waiting for next PID data to be preloaded...")
 
     print("All PIDs processed or skipped.")
     return 0
