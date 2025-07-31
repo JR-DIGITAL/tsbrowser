@@ -10,18 +10,18 @@ The package can be installed directly from github. Since the package provides a 
 
 === "pip"
     ```
-    pip install git+https://github.com/jonasViehweger/s2-timeseries-labeller.git
+    pip install git+https://github.com/JR-DIGITAL/tsbrowser.git
     tsbrowser
     ```
 
 === "pipx"
     ```
-    pipx run --spec git+https://github.com/jonasViehweger/s2-timeseries-labeller.git tsbrowser
+    pipx run --spec git+https://github.com/JR-DIGITAL/tsbrowser.git tsbrowser
     ```
 
 === "uvx"
     ```
-    uvx git+https://github.com/jonasViehweger/s2-timeseries-labeller.git
+    uvx git+https://github.com/JR-DIGITAL/tsbrowser.git
     ```
 
 This should run the `tsbrowser` command line interface and print the following output:
