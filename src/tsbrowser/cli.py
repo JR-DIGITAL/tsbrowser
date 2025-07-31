@@ -233,9 +233,9 @@ class UiEventHandler:
             self.toggle_flag_state(i, label)
 
 
-def setup_figure(args, pid):
+def setup_figure(args, pid, interpreter):
     fig = plt.figure(figsize=(10 * args.scalewindow[0], 7.5 * args.scalewindow[1]))
-    fig.canvas.manager.set_window_title(f"PID: {pid}")
+    fig.canvas.manager.set_window_title(f"PID: {pid} | Interpreter: {interpreter}")
     gs = fig.add_gridspec(4, 3, height_ratios=[2 / 5, 1 / 5, 1 / 5, 1 / 5])
     ax = dict()
     ax["img_L"] = fig.add_subplot(gs[0, 0])
@@ -349,7 +349,7 @@ def prepare_rgb(ds, bands, vis):
 
 
 # New function to load data for a single PID and put it into the queue
-def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_pids):
+def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
     while not pid_queue.empty():
         current_pid = pid_queue.get(timeout=1)
 
@@ -696,7 +696,7 @@ def process_pid(args, preloaded_data):
     plt.ion()
 
     # Now set up figure
-    fig, ax = setup_figure(args, current_pid)
+    fig, ax = setup_figure(args, current_pid, config["vars"].interpreter)
     handles = init_plots(args, ts, vhr_layers[0], ax)
 
     add_patches(ax, row, col)

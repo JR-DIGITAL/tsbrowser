@@ -54,4 +54,5 @@ markdown_extensions:
 
 nav:
   - index.md
-  - interface-overview.md
+  - setup.md
+  - running.md
