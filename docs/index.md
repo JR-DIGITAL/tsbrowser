@@ -41,7 +41,7 @@ To run the package, the following prerequisites need to be met
 
 ### Input data
 
-To run the package, stacks of satellite data chips are required. Have a look at the example data provided with the package at TODO on how to structure this data.
+To run the package, stacks of satellite data chips are required. Have a look at the example data provided with the package [here](https://nxc.joanneum.at/index.php/s/TKGAdd4FJ99LDgy) on how to structure this data.
 
 ### Sample Shapefile
 
@@ -60,7 +60,7 @@ The `tsbrowser` configuration specifies how the tsbrowser instance should behave
 ??? Configuration
 
     ```python title="tsbrowser configuration file"
-    --8<-- "tsbrowser_test_config.py"
+    --8<-- "tsbrowser_example_config.py"
     ```
 
 ## Running `tsbrowser`
