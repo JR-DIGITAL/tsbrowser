@@ -414,7 +414,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
 
         # Get image input directory
         data_dir = Path(sample_series[config["vars"].attr_i_loc])
-        if not data_dir_q.is_absolute():
+        if not data_dir.is_absolute():
             data_dir = args.geom_path.parent / data_dir
         if not data_dir.exists():
             logger.warning(
@@ -491,15 +491,15 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
                     )
                 )
 
-        if not tif_lists["q"] or not tif_lists["10m"]:
-            logger.warning(
-                f"No common valid files found for PID {current_pid}. Skipping."
-            )  # Changed print to logger.warning
-            pid_queue.task_done()
-            continue
+            if not tif_lists["q"] or not tif_lists["10m"]:
+                logger.warning(
+                    f"No common valid files found for PID {current_pid}. Skipping."
+                )  # Changed print to logger.warning
+                pid_queue.task_done()
+                continue
 
         # Get target point geometry in raster data projection
-        with rasterio.open(tif_lists["q"][0], "r") as tif:
+        with rasterio.open(tif_lists["10m"][0], "r") as tif:
             target_crs = tif.crs
             bounds = tif.bounds
 
@@ -519,53 +519,56 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
             pid_queue.task_done()
             continue
 
-        q_stack = load_stack(tif_lists["q"], t_common, point_reproj, config)
-        selected_band = q_stack.sel(band=config["vars"].q_band)
-        if config["vars"].q_mode == "threshold_lt":
-            ts_q_bin = selected_band < config["vars"].threshold
-        elif config["vars"].q_mode == "threshold_gt":
-            ts_q_bin = selected_band > config["vars"].threshold
-        elif config["vars"].q_mode == "classes":
-            if (
-                config["vars"].masking_classes is not None
-                and config["vars"].valid_classes is not None
-            ):
-                raise ValueError(
-                    "Cannot specify both masking_classes and valid_classes"
-                )
-            if config["vars"].masking_classes is not None:
-                ts_q_bin = ~selected_band.isin(config["vars"].masking_classes)
-            elif config["vars"].valid_classes is not None:
-                ts_q_bin = selected_band.isin(config["vars"].valid_classes)
+        if config["vars"].legacy_mode:
+            selector = [True]*len(tif_lists["10m"])
+        else:
+            q_stack = load_stack(tif_lists["q"], t_common, point_reproj, config)
+            selected_band = q_stack.sel(band=config["vars"].q_band)
+            if config["vars"].q_mode == "threshold_lt":
+                ts_q_bin = selected_band < config["vars"].threshold
+            elif config["vars"].q_mode == "threshold_gt":
+                ts_q_bin = selected_band > config["vars"].threshold
+            elif config["vars"].q_mode == "classes":
+                if (
+                    config["vars"].masking_classes is not None
+                    and config["vars"].valid_classes is not None
+                ):
+                    raise ValueError(
+                        "Cannot specify both masking_classes and valid_classes"
+                    )
+                if config["vars"].masking_classes is not None:
+                    ts_q_bin = ~selected_band.isin(config["vars"].masking_classes)
+                elif config["vars"].valid_classes is not None:
+                    ts_q_bin = selected_band.isin(config["vars"].valid_classes)
+                else:
+                    raise ValueError(
+                        "config error: either masking_classes or valid_classes must be specified"
+                    )
             else:
                 raise ValueError(
-                    "config error: either masking_classes or valid_classes must be specified"
+                    "config error: invalid parameter value for variable q_mode"
                 )
-        else:
-            raise ValueError(
-                "config error: invalid parameter value for variable q_mode"
+            overall_assessment = ts_q_bin.mean(dim=["x", "y"])
+            row_slice = slice(
+                len(q_stack.y) // 2 - config["vars"].specific_radius,
+                len(q_stack.y) // 2 + config["vars"].specific_radius + 1,
             )
-        overall_assessment = ts_q_bin.mean(dim=["x", "y"])
-        row_slice = slice(
-            len(q_stack.y) // 2 - config["vars"].specific_radius,
-            len(q_stack.y) // 2 + config["vars"].specific_radius + 1,
-        )
-        col_slice = slice(
-            len(q_stack.x) // 2 - config["vars"].specific_radius,
-            len(q_stack.x) // 2 + config["vars"].specific_radius + 1,
-        )
-        specific_assessment = (
-            ts_q_bin.isel(y=row_slice, x=col_slice).mean(dim=["x", "y"])
-            >= config["vars"].specific_valid_ratio
-        )
-        selector = np.logical_and(overall_assessment, specific_assessment).values
+            col_slice = slice(
+                len(q_stack.x) // 2 - config["vars"].specific_radius,
+                len(q_stack.x) // 2 + config["vars"].specific_radius + 1,
+            )
+            specific_assessment = (
+                ts_q_bin.isel(y=row_slice, x=col_slice).mean(dim=["x", "y"])
+                >= config["vars"].specific_valid_ratio
+            )
+            selector = np.logical_and(overall_assessment, specific_assessment).values
 
-        if not any(selector):
-            logger.warning(
-                f"No valid time steps after quality assessment for PID {current_pid}. Skipping."
-            )  # Changed print to logger.warning
-            pid_queue.task_done()
-            continue
+            if not any(selector):
+                logger.warning(
+                    f"No valid time steps after quality assessment for PID {current_pid}. Skipping."
+                )  # Changed print to logger.warning
+                pid_queue.task_done()
+                continue
 
         ts = load_stack(
             list(compress(tif_lists["10m"], selector)),
