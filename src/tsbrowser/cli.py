@@ -349,7 +349,7 @@ def prepare_rgb(ds, bands, vis):
 
 
 # New function to load data for a single PID and put it into the queue
-def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
+def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_pids):
     while not pid_queue.empty():
         current_pid = pid_queue.get(timeout=1)
 
