@@ -349,7 +349,7 @@ def prepare_rgb(ds, bands, vis):
 
 
 # New function to load data for a single PID and put it into the queue
-def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
+def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_pids):
     while not pid_queue.empty():
         current_pid = pid_queue.get(timeout=1)
 
@@ -374,6 +374,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
                 f"No data found for PID: {current_pid}"
             )  # Changed print to logger.warning
             pid_queue.task_done()
+            failed_pids.append(current_pid)
             continue
 
         sample_series = geom_df_subset.iloc[0]
@@ -403,6 +404,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
                     f"Raster quality directory does not exist: {data_dir_q} for PID {current_pid}"
                 )  # Changed print to logger.warning
                 pid_queue.task_done()
+                failed_pids.append(current_pid)
                 continue
             glob_files = data_dir_q.glob(
                 f"{'**/' if config['vars'].q_recursive else ''}{config['vars'].q_pattern}"
@@ -418,6 +420,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
                 f"Raster data directory does not exist: {data_dir} for PID {current_pid}"
             )  # Changed print to logger.warning
             pid_queue.task_done()
+            failed_pids.append(current_pid)
             continue
 
         for res in ("10m", "20m"):
@@ -493,6 +496,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
                     f"No common valid files found for PID {current_pid}. Skipping."
                 )  # Changed print to logger.warning
                 pid_queue.task_done()
+                failed_pids.append(current_pid)
                 continue
 
         # Get target point geometry in raster data projection
@@ -514,6 +518,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
                 f"Sample point outside of raster extent for PID {current_pid}. Skipping."
             )  # Changed print to logger.warning
             pid_queue.task_done()
+            failed_pids.append(current_pid)
             continue
 
         if config["vars"].legacy_mode:
@@ -565,6 +570,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
                     f"No valid time steps after quality assessment for PID {current_pid}. Skipping."
                 )  # Changed print to logger.warning
                 pid_queue.task_done()
+                failed_pids.append(current_pid)
                 continue
 
         ts = load_stack(
@@ -602,6 +608,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df):
                 f"No VHR data found for PID {current_pid}. Skipping."
             )  # Changed print to logger.warning
             pid_queue.task_done()
+            failed_pids.append(current_pid)
             continue
 
         # Calculate/set vis bounds
@@ -861,6 +868,7 @@ def run_tsbrowser(args):
     preloaded_data_queue = queue.Queue(
         maxsize=5
     )  # Limit the queue size to avoid memory issues
+    failed_pids = []
     num_preload_threads = args.preload_threads
 
     # Populate the PID queue
@@ -871,7 +879,7 @@ def run_tsbrowser(args):
     loader_threads = []
     for _ in range(num_preload_threads):
         thread = threading.Thread(
-            target=data_loader, args=(pid_queue, preloaded_data_queue, args, geom_df)
+            target=data_loader, args=(pid_queue, preloaded_data_queue, args, geom_df, failed_pids)
         )
         thread.daemon = True
         loader_threads.append(thread)
@@ -879,7 +887,7 @@ def run_tsbrowser(args):
 
     processed_pids_count = 0
     print(f"Waiting for next PID data to be preloaded...")
-    while not pid_queue.empty() or not preloaded_data_queue.empty():
+    while (len(failed_pids)+processed_pids_count) < len(all_pids_to_process):
         try:
             preloaded_data = preloaded_data_queue.get(timeout=1)
         except queue.Empty:
