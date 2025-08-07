@@ -235,8 +235,30 @@ class UiEventHandler:
 
 
 def setup_figure(args, pid, interpreter):
+    
     fig = plt.figure(figsize=(10 * args.scalewindow[0], 7.5 * args.scalewindow[1]))
     fig.canvas.manager.set_window_title(f"PID: {pid} | Interpreter: {interpreter}")
+    
+    # Add logo with relative positioning that scales with resizing
+    try:
+        from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+        logo_path = Path(__file__).parent / "assets" / "logo.png"
+        logo_img = mpimg.imread(logo_path)
+        
+        # Create OffsetImage with desired zoom/size
+        imagebox = OffsetImage(logo_img, zorder=0, dpi_cor=False)
+        
+        # Position in top left corner using relative coordinates
+        ab = AnnotationBbox(imagebox, (0.0, 0.94), 
+                          xycoords='figure fraction',
+                          box_alignment=(0.0, 1.0),  # align left-top
+                          frameon=False,
+                          zorder=0)
+        fig.add_artist(ab)
+    except (FileNotFoundError):
+        # Add fallback text in top left corner
+        pass
+
     gs = fig.add_gridspec(4, 3, height_ratios=[2 / 5, 1 / 5, 1 / 5, 1 / 5])
     ax = dict()
     ax["img_L"] = fig.add_subplot(gs[0, 0])
@@ -253,25 +275,6 @@ def setup_figure(args, pid, interpreter):
         ax[key].grid(True, "major", "x")
         ax[key].grid(True, "major", "y")
         ax[key].set_ylabel(val)
-    
-    # Add logo with relative positioning that scales with resizing
-    try:
-        from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-        logo_path = Path(__file__).parent / "assets" / "logo.png"
-        logo_img = mpimg.imread(logo_path)
-        
-        # Create OffsetImage with desired zoom/size
-        imagebox = OffsetImage(logo_img, zoom=0.15)
-        
-        # Position in top left corner using relative coordinates
-        ab = AnnotationBbox(imagebox, (0.02, 0.98), 
-                          xycoords='figure fraction',
-                          box_alignment=(0, 1),  # align left-top
-                          frameon=False)
-        fig.add_artist(ab)
-    except (FileNotFoundError):
-        # Add fallback text in top left corner
-        pass
     
     plt.tight_layout(pad=1.4, h_pad=-1.0)
     return fig, ax
