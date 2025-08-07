@@ -294,7 +294,7 @@ def add_patch_vhr(ax, offset_line, offset_col):
     ax["img_VHR"].add_patch(patch)
 
 
-def load_stack(files: list[Path], times: list[datetime], point, config):
+def load_stack(files: list[Path], times: list[datetime], point, config, apply_mask=True):
     with rasterio.open(files[0], "r") as tif:
         transform = tif.transform
         pixel_size_x = transform.a
@@ -314,7 +314,7 @@ def load_stack(files: list[Path], times: list[datetime], point, config):
         # so we just ignore it
         warnings.filterwarnings("ignore", category=UserWarning, module="rioxarray")
         for tif_path in files:
-            da = rioxarray.open_rasterio(tif_path, masked=True)
+            da = rioxarray.open_rasterio(tif_path, masked=apply_mask)
             # Slice the chip
             if not config["vars"].legacy_mode:
                 da = da.isel(
@@ -524,7 +524,9 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
         if config["vars"].legacy_mode:
             selector = [True]*len(tif_lists["10m"])
         else:
-            q_stack = load_stack(tif_lists["q"], t_common, point_reproj, config)
+            # this stack is loaded without applying the nd-mask to preserve integer data type
+            # otherwise xarray converts everything to float because nd is represented as NaN
+            q_stack = load_stack(tif_lists["q"], t_common, point_reproj, config, False)
             selected_band = q_stack.sel(band=config["vars"].q_band)
             if config["vars"].q_mode == "threshold_lt":
                 ts_q_bin = selected_band < config["vars"].threshold
@@ -539,9 +541,21 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
                         "Cannot specify both masking_classes and valid_classes"
                     )
                 if config["vars"].masking_classes is not None:
-                    ts_q_bin = ~selected_band.isin(config["vars"].masking_classes)
+                    if config["vars"].eval_bitwise:
+                        ts_q_bin = xr.ones_like(selected_band, dtype=bool) # start: all valid
+                        for val in config["vars"].masking_classes:
+                            not_masked = (selected_band & val) == 0
+                            ts_q_bin = ts_q_bin & not_masked
+                    else:
+                        ts_q_bin = ~selected_band.isin(config["vars"].masking_classes)
                 elif config["vars"].valid_classes is not None:
-                    ts_q_bin = selected_band.isin(config["vars"].valid_classes)
+                    if config["vars"].eval_bitwise:
+                        ts_q_bin = xr.zeros_like(selected_band, dtype=bool) # start: all invalid
+                        for val in config["vars"].valid_classes:
+                            not_masked = (selected_band & val) > 0
+                            ts_q_bin = ts_q_bin | not_masked
+                    else:
+                        ts_q_bin = selected_band.isin(config["vars"].valid_classes)
                 else:
                     raise ValueError(
                         "config error: either masking_classes or valid_classes must be specified"
@@ -550,6 +564,9 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
                 raise ValueError(
                     "config error: invalid parameter value for variable q_mode"
                 )
+            # Ensure that no-data pixels are set to False
+            is_not_nd = ~selected_band.isin(selected_band._FillValue)
+            ts_q_bin = ts_q_bin & is_not_nd
             overall_assessment = ts_q_bin.mean(dim=["x", "y"])
             row_slice = slice(
                 len(q_stack.y) // 2 - config["vars"].specific_radius,

@@ -32,6 +32,7 @@ q_mode = "classes"  # possible values: classes, threshold_lt, threshold_gt
 q_band = 1  # set which band to read from each quality raster file
 masking_classes = (0, 8, 9, 11)  # used if mode == 'classes'
 valid_classes = None 
+eval_bitwise = False # used if mode == "classes"
 threshold = 3  # used if mode in ('threshold_gt', 'threshold_lt')
 overall_valid_ratio = 0.1
 specific_radius = 9
