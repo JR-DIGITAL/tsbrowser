@@ -17,6 +17,7 @@ import geopandas as gpd
 import matplotlib.dates as mdates
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 import numpy as np
 import pandas as pd
 import rasterio
@@ -252,6 +253,26 @@ def setup_figure(args, pid, interpreter):
         ax[key].grid(True, "major", "x")
         ax[key].grid(True, "major", "y")
         ax[key].set_ylabel(val)
+    
+    # Add logo with relative positioning that scales with resizing
+    try:
+        from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+        logo_path = Path(__file__).parent.parent.parent / "docs" / "img" / "logo.png"
+        logo_img = mpimg.imread(logo_path)
+        
+        # Create OffsetImage with desired zoom/size
+        imagebox = OffsetImage(logo_img, zoom=0.15)
+        
+        # Position in top left corner using relative coordinates
+        ab = AnnotationBbox(imagebox, (0.02, 0.98), 
+                          xycoords='figure fraction',
+                          box_alignment=(0, 1),  # align left-top
+                          frameon=False)
+        fig.add_artist(ab)
+    except (FileNotFoundError):
+        # Add fallback text in top left corner
+        pass
+    
     plt.tight_layout(pad=1.4, h_pad=-1.0)
     return fig, ax
 
@@ -565,8 +586,13 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
                     "config error: invalid parameter value for variable q_mode"
                 )
             # Ensure that no-data pixels are set to False
-            is_not_nd = ~selected_band.isin(selected_band._FillValue)
-            ts_q_bin = ts_q_bin & is_not_nd
+            try:
+                is_not_nd = ~selected_band.isin(selected_band._FillValue)
+                ts_q_bin = ts_q_bin & is_not_nd
+            except AttributeError:
+                # Passing if the _FillValue attribute does not exist
+                logger.info("_FillValue not set, skipping no-data check")
+                pass
             overall_assessment = ts_q_bin.mean(dim=["x", "y"])
             row_slice = slice(
                 len(q_stack.y) // 2 - config["vars"].specific_radius,
