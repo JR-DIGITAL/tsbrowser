@@ -23,6 +23,12 @@ tsbrowser = "tsbrowser.cli:main"
 requires = ["setuptools>=64,<76", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+tsbrowser = ["assets/*"]
+
 [tool.ruff.lint]
 extend-select = [
     "F",        # Pyflakes rules

@@ -257,7 +257,7 @@ def setup_figure(args, pid, interpreter):
     # Add logo with relative positioning that scales with resizing
     try:
         from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-        logo_path = Path(__file__).parent.parent.parent / "docs" / "img" / "logo.png"
+        logo_path = Path(__file__).parent / "assets" / "logo.png"
         logo_img = mpimg.imread(logo_path)
         
         # Create OffsetImage with desired zoom/size
