@@ -876,29 +876,35 @@ def run_tsbrowser(args):
 
     all_pids_to_process = []
     if not args.pid:
-        print("No PIDs provided. Checking for existing flag files...")
         all_pids = geom_df[config["vars"].attr_id].astype(str).tolist()
-
-        if config["vars"].flag_dir is None:
-            flag_dir = args.geom_path.parent
+        
+        if args.show_all:
+            print("Showing all PIDs regardless of interpretation status...")
+            all_pids_to_process = all_pids
+            print(f"{len(all_pids_to_process)} samples to process.")
         else:
-            flag_dir = Path(config["vars"].flag_dir)
-            if not flag_dir.is_absolute():
-                flag_dir = Path(args.config).parent / flag_dir
+            print("No PIDs provided. Checking for existing flag files...")
 
-        existing_flags = {
-            f.stem[len("flags_") : ]
-            for f in flag_dir.glob("flags_*.json")
-        }
+            if config["vars"].flag_dir is None:
+                flag_dir = args.geom_path.parent
+            else:
+                flag_dir = Path(config["vars"].flag_dir)
+                if not flag_dir.is_absolute():
+                    flag_dir = Path(args.config).parent / flag_dir
 
-        all_pids_to_process = [
-            pid for pid in all_pids if str(pid) not in existing_flags
-        ]
-        print(f"{len(all_pids_to_process)} samples to interpret.")
+            existing_flags = {
+                f.stem[len("flags_") : ]
+                for f in flag_dir.glob("flags_*.json")
+            }
 
-        if not all_pids_to_process:
-            print("All PIDs already have flag files. Exiting.")
-            return 0
+            all_pids_to_process = [
+                pid for pid in all_pids if str(pid) not in existing_flags
+            ]
+            print(f"{len(all_pids_to_process)} samples to interpret.")
+
+            if not all_pids_to_process:
+                print("All PIDs already have flag files. Exiting.")
+                return 0
     else:
         all_pids_to_process = args.pid
 
@@ -1001,6 +1007,11 @@ def main():
         type=int,
         default=1,
         metavar="INT",
+    )
+    parser.add_argument(
+        "--show-all",
+        help="Show all PIDs regardless of interpretation status (default: only uninterpreted)",
+        action="store_true",
     )
     args = parser.parse_args()
     return run_tsbrowser(args)
