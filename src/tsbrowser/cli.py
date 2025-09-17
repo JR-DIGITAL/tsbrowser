@@ -27,7 +27,7 @@ import string
 import xarray as xr
 from pyproj import Transformer
 
-from .vhr import get_vhr
+from tsbrowser.vhr import get_vhr
 
 prompt = "--> "
 flag_labels = set(map(str, range(10)))
@@ -318,7 +318,7 @@ def add_patch_vhr(ax, offset_line, offset_col):
     ax["img_VHR"].add_patch(patch)
 
 
-def load_stack(files: list[Path], times: list[datetime], point, config, apply_mask=True):
+def load_stack(files: list[Path], times: list[datetime], point, config, apply_mask=False):
     with rasterio.open(files[0], "r") as tif:
         transform = tif.transform
         pixel_size_x = transform.a
@@ -337,8 +337,13 @@ def load_stack(files: list[Path], times: list[datetime], point, config, apply_ma
         # rioxarray is warning about different scales per band, did not find a way to handle this warning
         # so we just ignore it
         warnings.filterwarnings("ignore", category=UserWarning, module="rioxarray")
-        for tif_path in files:
-            da = rioxarray.open_rasterio(tif_path, masked=apply_mask)
+        for i, tif_path in enumerate(files):
+            try:
+                da = rioxarray.open_rasterio(tif_path, masked=apply_mask)
+            except rasterio.errors.RasterioIOError as e:
+                logger.warning(f"Error opening {tif_path}: {e}")
+                del times[i]
+                continue
             # Slice the chip
             if not config["vars"].legacy_mode:
                 da = da.isel(
@@ -350,6 +355,12 @@ def load_stack(files: list[Path], times: list[datetime], point, config, apply_ma
                         math.ceil(col - half_width_px), math.floor(col + half_width_px)
                     ),
                 )
+            try:
+                da = da.compute()
+            except rasterio.errors.RasterioIOError as e:
+                logger.warning(f"Error reading {tif_path}: {e}")
+                del times[i]
+                continue
             chips.append(da)
         # Combine along new "band" or "variable" dimension
         chip_stack = xr.concat(chips, dim=pd.Index(times, name="time"))
@@ -418,7 +429,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
 
         # Get image files
         tif_lists = dict()
-        if not config["vars"].legacy_mode:
+        if not config["vars"].legacy_mode or config["vars"].q_mode is not None:
             # get quality files
             data_dir_q = Path(sample_series[config["vars"].attr_q_loc])
             if not data_dir_q.is_absolute():
@@ -466,7 +477,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
                     tif_lists[res] = []
 
         # Create temporal consistency
-        if config["vars"].legacy_mode:
+        if config["vars"].legacy_mode or config["vars"].q_mode is None:
             t_common = list(map(RetrieveTimestamp, tif_lists["10m"]))
         else:
             t_qa = list(map(RetrieveTimestamp, tif_lists["q"]))
@@ -545,7 +556,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
             failed_pids.append(current_pid)
             continue
 
-        if config["vars"].legacy_mode:
+        if config["vars"].legacy_mode or config["vars"].q_mode is None:
             selector = [True]*len(tif_lists["10m"])
         else:
             # this stack is loaded without applying the nd-mask to preserve integer data type
@@ -833,6 +844,8 @@ def process_pid(args, preloaded_data):
         "interpreter": config["vars"].interpreter,
     }
 
+    flags_file_path.parent.mkdir(parents=True, exist_ok=True)
+
     with open(flags_file_path, "w") as flags_file:
         json.dump(output_data, flags_file, indent=4)
 
@@ -1015,3 +1028,7 @@ def main():
     )
     args = parser.parse_args()
     return run_tsbrowser(args)
+
+
+if __name__ == "__main__":
+    main()
