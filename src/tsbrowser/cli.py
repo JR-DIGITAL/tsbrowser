@@ -651,11 +651,20 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
             result = re.sub(pattern, r'ts["\1"]', index_formula)
             ts[index_name] = eval(result)
 
+
+        wgs_transformer = Transformer.from_crs(
+            original_geom_df.crs, 4326, always_xy=True
+        )
+        # point lat lon
+        point_wgs = shapely.transform(
+            sample_series.geometry, wgs_transformer.transform, interleaved=False
+        )
+
         # Fetch VHR data
         vhr_layers = asyncio.run(
             get_vhr(
-                sample_series.geometry.y,
-                sample_series.geometry.x,
+                point_wgs.y,
+                point_wgs.x,
                 config["vars"].vhr_zoom,
                 remove_duplicates=config["vars"].remove_duplicates,
             )
