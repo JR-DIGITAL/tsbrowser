@@ -487,7 +487,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
             t_qa_set = set(t_qa)
             t_im_set = set(t_im)
             t_common_set = t_qa_set.intersection(t_im_set)
-            t_common = sorted(list(t_common_set))
+            # t_common = sorted(list(t_common_set))
 
             # Track discarded timestamps
             discarded_qa = t_qa_set - t_common_set
@@ -496,14 +496,38 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
             # Filter tif_lists to keep only files with common timestamps
             filtered_qa = []
             filtered_im = []
-
-            for i, timestamp in enumerate(t_qa):
-                if timestamp in t_common_set:
-                    filtered_qa.append(tif_lists["q"][i])
-
-            for i, timestamp in enumerate(t_im):
-                if timestamp in t_common_set:
-                    filtered_im.append(tif_lists["10m"][i])
+            t_common = []
+            t_ambiguous = set()
+            
+            for timestamp in sorted(t_common_set):
+                n_qa = t_qa.count(timestamp)    # each count must be >0 (common timestamps)
+                n_im = t_im.count(timestamp)
+                if n_qa == 1 and n_im == 1:     # unambiguous consistency 
+                    i_qa = t_qa.index(timestamp)
+                    i_im = t_im.index(timestamp)
+                    t_common.append(timestamp)
+                    filtered_qa.append(tif_lists["q"][i_qa])
+                    filtered_im.append(tif_lists["10m"][i_im])
+                elif n_qa == 1 and n_im > 1:   # ambiguous consistency - pad qa list
+                    i_qa = t_qa.index(timestamp)
+                    start = 0
+                    for k in range(n_im):
+                        i_im = t_im.index(timestamp, start)
+                        t_common.append(timestamp)
+                        filtered_qa.append(tif_lists["q"][i_qa])
+                        filtered_im.append(tif_lists["10m"][i_im])
+                        start = i_im + 1
+                elif n_qa >= 1 and n_im == 1:   # ambiguous consistency - pad im list
+                    i_im = t_im.index(timestamp)
+                    start = 0
+                    for k in range(n_qa):
+                        i_qa = t_qa.index(timestamp, start)
+                        t_common.append(timestamp)
+                        filtered_qa.append(tif_lists["q"][i_qa])
+                        filtered_im.append(tif_lists["10m"][i_im])
+                        start = i_qa + 1
+                else:                           # unresolved ambiguity - drop items
+                    t_ambiguous.add(timestamp)
 
             tif_lists["q"] = filtered_qa
             tif_lists["10m"] = filtered_im
@@ -522,6 +546,14 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
                     "Discarded image files: {}".format(
                         ", ".join(
                             map(lambda x: x.strftime("%Y-%m-%d"), sorted(discarded_im))
+                        )
+                    )
+                )
+            if t_ambiguous:
+                logger.info(  # Changed print to logger.info
+                    "Unresolved ambiguities: {}".format(
+                        ", ".join(
+                            map(lambda x: x.strftime("%Y-%m-%d"), sorted(t_ambiguous))
                         )
                     )
                 )
