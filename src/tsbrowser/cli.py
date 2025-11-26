@@ -117,7 +117,6 @@ class UiEventHandler:
         
         # Handle regular alt combinations
         if modifier == "alt":
-            print(event.key)
             if key in (",", "."):
                 years_offset = 1 if key == "." else -1
                 nearest_i = self.find_nearest_year_offset(self.i, years_offset)
