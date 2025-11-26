@@ -44,15 +44,21 @@ You may also use the standard figure tools in the lower left part of the window 
 
 Keybord commands are enabled by using the Alt key as a modifier. Browsing through time is mapped to the arrow keys:
 
-- Alt + &rarr; ... move one step forward in the HR time series
-- Alt + &larr; ... move one step backward in the HR time series
-- Alt + &uarr; ... move one step forward in the VHR time series
-- Alt + &darr; ... move one step backward in the VHR time series
+| Keyboard Shortcut | Action |
+|-------------------|--------|
+| Alt + → | Move one step forward in the HR time series |
+| Alt + ← | Move one step backward in the HR time series |
+| Alt + . | Move one year forward in the HR time series |
+| Alt + , | Move one year backward in the HR time series |
+| Alt + ↑ | Move one step forward in the VHR time series |
+| Alt + ↓ | Move one step backward in the VHR time series |
 
 You also need to use the keyboard in order to set any flags other than the default flag. 
 
-- Alt + 0 - 9 ... set flag labelled 0 - 9 on the currently selected observation (marked by the orange circle) 
-- Alt + letter ... you may define additional, non-numeric flags using the parameter `add_flag_labels` in the configuration file
+| Keyboard Shortcut | Action |
+|-------------------|--------|
+| Alt + 0-9 | Set flag labelled 0-9 on the currently selected observation (marked by the orange circle) |
+| Alt + letter | Define additional, non-numeric flags using the parameter `add_flag_labels` in the configuration file |
 
 ## Finishing the interpretation
 

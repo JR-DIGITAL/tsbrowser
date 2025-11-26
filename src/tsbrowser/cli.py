@@ -83,6 +83,7 @@ class UiEventHandler:
         self.vhr_layers = vhr_layers
         self.vhr_ann_top = None
         self.vhr_ann_bottom = None
+        self.date_ann = None
         self.ax = ax
         self.handles = handles
         self.i = 0
@@ -112,7 +113,16 @@ class UiEventHandler:
             modifier, key = event.key.split("+")
         except ValueError:
             modifier = None
+            key = event.key
+        
+        # Handle regular alt combinations
         if modifier == "alt":
+            print(event.key)
+            if key in (",", "."):
+                years_offset = 1 if key == "." else -1
+                nearest_i = self.find_nearest_year_offset(self.i, years_offset)
+                self.update(nearest_i)
+                return
             if key in ("right", "left"):
                 if key == "right":
                     i = self.i + 1
@@ -125,8 +135,6 @@ class UiEventHandler:
                 elif key == "down":
                     i = self.i_vhr + 1
                 self.update_vhr(self.limit_i_vhr(i))
-            # elif key == 'down':
-            # self.toggle_flag_state(self.i, config['vars'].default_flag_label)
             elif key in flag_labels:
                 self.toggle_flag_state(self.i, key)
 
@@ -147,6 +155,27 @@ class UiEventHandler:
                     self.args.vis,
                 )
                 val.set_data(img)
+        
+        # Date annotation
+        current_date = self.geoarray.time.values[i]
+        date_str = pd.Timestamp(current_date).strftime('%Y-%m-%d')
+        
+        if self.date_ann is not None:
+            self.date_ann.remove()
+        
+        # Add date annotation to one of the image panels (top-left in this case)
+        self.date_ann = self.ax["img_L"].annotate(
+            f'Date: {date_str}',
+            (0.02, 0.98),
+            color='white',
+            backgroundcolor='black',
+            va='top',
+            ha='left',
+            xycoords='axes fraction',
+            fontsize='medium',
+            bbox=dict(boxstyle='round,pad=0.5', facecolor='black', alpha=0.7, edgecolor='white')
+        )
+        
         self.i = i
 
     def update_vhr(self, i=0):
@@ -233,6 +262,31 @@ class UiEventHandler:
         for i, label in iter(flag_val.items()):
             self.toggle_flag_state(i, label)
 
+    def find_nearest_year_offset(self, i, years_offset=1):
+        """
+        Find the nearest acquisition approximately years_offset years away from index i.
+        
+        Args:
+            i: Current time index
+            years_offset: Number of years to offset (positive for forward, negative for backward)
+        
+        Returns:
+            Index of nearest acquisition, or i if none found
+        """
+        current_date = pd.Timestamp(self.geoarray.time.values[i])
+        target_date = current_date + pd.DateOffset(years=years_offset)
+        
+        # Convert all times to pandas timestamps for easier comparison
+        all_times = pd.DatetimeIndex(self.geoarray.time.values)
+        
+        # Calculate absolute differences from target date
+        time_diffs = abs(all_times - target_date)
+        
+        # Find the index with minimum difference
+        nearest_idx = time_diffs.argmin()
+        
+        return nearest_idx
+
 
 def setup_figure(args, pid, interpreter):
     
@@ -317,8 +371,43 @@ def add_patch_vhr(ax, offset_line, offset_col):
     )
     ax["img_VHR"].add_patch(patch)
 
+def stack_single_band(file, layermap):
+    bands_10m = ["B02", "B03", "B04", "B08"]
+    layermap_10m = [layermap[band] for band in layermap.keys() if band in bands_10m]
+    layermap_20m = [layermap[band] for band in layermap.keys() if band not in bands_10m]
+    files_10m = [file.replace("B02", band) for band in layermap.keys() if band in bands_10m]
+    files_20m = [file.replace("B02", band) for band in layermap.keys() if band not in bands_10m]
+    da_combined_10m = xr.open_mfdataset(
+        files_10m,
+        engine="rasterio",
+        concat_dim="band",
+        combine="nested",
+    )
+    da_combined_10m.coords["band"] = layermap_10m
+    da_combined_20m = xr.open_mfdataset(
+        files_20m,
+        engine="rasterio",
+        concat_dim="band",
+        combine="nested",
+    ).interp(
+        x=da_combined_10m["x"],
+        y=da_combined_10m["y"],
+        method="nearest",
+        kwargs={"fill_value": "extrapolate"},
+    )
+    da_combined_20m.coords["band"] = layermap_20m
+    return xr.concat([
+        da_combined_10m.to_array().squeeze("variable", drop=True),
+        da_combined_20m.to_array().squeeze("variable", drop=True)
+        ],
+        dim="band"
+    )
 
-def load_stack(files: list[Path], times: list[datetime], point, config, apply_mask=False):
+
+
+
+
+def load_stack(files: list[Path], times: list[datetime], point, config, apply_mask=False, single_band=False):
     with rasterio.open(files[0], "r") as tif:
         transform = tif.transform
         pixel_size_x = transform.a
@@ -339,7 +428,10 @@ def load_stack(files: list[Path], times: list[datetime], point, config, apply_ma
         warnings.filterwarnings("ignore", category=UserWarning, module="rioxarray")
         for i, tif_path in enumerate(files):
             try:
-                da = rioxarray.open_rasterio(tif_path, masked=apply_mask)
+                if single_band:
+                    da = stack_single_band(tif_path, config["vars"].layermap)
+                else:
+                    da = rioxarray.open_rasterio(tif_path, masked=apply_mask)
             except rasterio.errors.RasterioIOError as e:
                 logger.warning(f"Error opening {tif_path}: {e}")
                 del times[i]
@@ -972,7 +1064,7 @@ def run_tsbrowser(args):
 
     pid_queue = queue.Queue()
     preloaded_data_queue = queue.Queue(
-        maxsize=5
+        maxsize=args.queue_length
     )  # Limit the queue size to avoid memory issues
     failed_pids = []
     num_preload_threads = args.preload_threads
@@ -1058,6 +1150,13 @@ def main():
     parser.add_argument(
         "--preload-threads",
         help="Number of background threads to preload data (default: 5)",
+        type=int,
+        default=1,
+        metavar="INT",
+    )
+    parser.add_argument(
+        "--queue-length",
+        help="Maximum number of items to preload",
         type=int,
         default=1,
         metavar="INT",
