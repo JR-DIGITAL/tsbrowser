@@ -920,25 +920,32 @@ def process_pid(args, preloaded_data):
 
     print(f"Interpretation for point {current_pid}:")
     try:
-        confidence_input = (
-            input(
+        # Get confidence
+        while True:
+            confidence_input = input(
                 f"Enter interpretation confidence (high/h, medium/m, low/l){confidence_str}: "
-            )
-            .strip()
-            .lower()
-        )
-        confidence = confidence_input or previous_confidence
-        while confidence not in {"high", "medium", "low", "h", "m", "l", None}:
-            confidence = (
-                input("Please enter 'high', 'medium', or 'low': ").strip().lower()
-            )
+            ).strip().lower()
+            
+            if not confidence_input and previous_confidence is not None:
+                confidence = previous_confidence
+                break
+                
+            if confidence_input in {"high", "medium", "low", "h", "m", "l"}:
+                confidence = confidence_input
+                break
+            else:
+                print("Please enter 'high', 'medium', or 'low': ", end="")
+        
+        # Convert short forms
         if confidence in {"h", "m", "l"}:
             confidence = {"h": "high", "m": "medium", "l": "low"}[confidence]
-
+        
+        # Get comment
         comment_input = input(
             f"Enter any comment about the interpretation{comment_str}: "
         ).strip()
         comment = comment_input or previous_comment
+        
     except EOFError:
         return
 
