@@ -91,7 +91,7 @@ class UiEventHandler:
         self.flags = dict()
         self.flag_val = dict()
         # used to display flags not tied to the current observation set
-        self.t_extra = dict()  
+        self.t_extra = dict()
         for key, band_name in iter(config["vars"].timeseries.items()):
             y = ts[band_name].isel(x=len(ts.x) // 2, y=len(ts.y) // 2)
             setattr(self, key, y.data)
@@ -114,7 +114,7 @@ class UiEventHandler:
         except ValueError:
             modifier = None
             key = event.key
-        
+
         # Handle regular alt combinations
         if modifier == "alt":
             if key in (",", "."):
@@ -154,27 +154,32 @@ class UiEventHandler:
                     self.args.vis,
                 )
                 val.set_data(img)
-        
+
         # Date annotation
         current_date = self.geoarray.time.values[i]
-        date_str = pd.Timestamp(current_date).strftime('%Y-%m-%d')
-        
+        date_str = pd.Timestamp(current_date).strftime("%Y-%m-%d")
+
         if self.date_ann is not None:
             self.date_ann.remove()
-        
+
         # Add date annotation to one of the image panels (top-left in this case)
         self.date_ann = self.ax["img_L"].annotate(
-            f'Date: {date_str}',
+            f"Date: {date_str}",
             (0.02, 0.98),
-            color='white',
-            backgroundcolor='black',
-            va='top',
-            ha='left',
-            xycoords='axes fraction',
-            fontsize='medium',
-            bbox=dict(boxstyle='round,pad=0.5', facecolor='black', alpha=0.7, edgecolor='white')
+            color="white",
+            backgroundcolor="black",
+            va="top",
+            ha="left",
+            xycoords="axes fraction",
+            fontsize="medium",
+            bbox=dict(
+                boxstyle="round,pad=0.5",
+                facecolor="black",
+                alpha=0.7,
+                edgecolor="white",
+            ),
         )
-        
+
         self.i = i
 
     def update_vhr(self, i=0):
@@ -264,51 +269,54 @@ class UiEventHandler:
     def find_nearest_year_offset(self, i, years_offset=1):
         """
         Find the nearest acquisition approximately years_offset years away from index i.
-        
+
         Args:
             i: Current time index
             years_offset: Number of years to offset (positive for forward, negative for backward)
-        
+
         Returns:
             Index of nearest acquisition, or i if none found
         """
         current_date = pd.Timestamp(self.geoarray.time.values[i])
         target_date = current_date + pd.DateOffset(years=years_offset)
-        
+
         # Convert all times to pandas timestamps for easier comparison
         all_times = pd.DatetimeIndex(self.geoarray.time.values)
-        
+
         # Calculate absolute differences from target date
         time_diffs = abs(all_times - target_date)
-        
+
         # Find the index with minimum difference
         nearest_idx = time_diffs.argmin()
-        
+
         return nearest_idx
 
 
 def setup_figure(args, pid, interpreter):
-    
     fig = plt.figure(figsize=(10 * args.scalewindow[0], 7.5 * args.scalewindow[1]))
     fig.canvas.manager.set_window_title(f"PID: {pid} | Interpreter: {interpreter}")
-    
+
     # Add logo with relative positioning that scales with resizing
     try:
         from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+
         logo_path = Path(__file__).parent / "assets" / "logo.png"
         logo_img = mpimg.imread(logo_path)
-        
+
         # Create OffsetImage with desired zoom/size
         imagebox = OffsetImage(logo_img, zorder=0, dpi_cor=False)
-        
+
         # Position in top left corner using relative coordinates
-        ab = AnnotationBbox(imagebox, (0.0, 0.94), 
-                          xycoords='figure fraction',
-                          box_alignment=(0.0, 1.0),  # align left-top
-                          frameon=False,
-                          zorder=0)
+        ab = AnnotationBbox(
+            imagebox,
+            (0.0, 0.94),
+            xycoords="figure fraction",
+            box_alignment=(0.0, 1.0),  # align left-top
+            frameon=False,
+            zorder=0,
+        )
         fig.add_artist(ab)
-    except (FileNotFoundError):
+    except FileNotFoundError:
         # Add fallback text in top left corner
         pass
 
@@ -328,7 +336,7 @@ def setup_figure(args, pid, interpreter):
         ax[key].grid(True, "major", "x")
         ax[key].grid(True, "major", "y")
         ax[key].set_ylabel(val)
-    
+
     plt.tight_layout(pad=1.4, h_pad=-1.0)
     return fig, ax
 
@@ -370,43 +378,10 @@ def add_patch_vhr(ax, offset_line, offset_col):
     )
     ax["img_VHR"].add_patch(patch)
 
-def stack_single_band(file, layermap):
-    bands_10m = ["B02", "B03", "B04", "B08"]
-    layermap_10m = [layermap[band] for band in layermap.keys() if band in bands_10m]
-    layermap_20m = [layermap[band] for band in layermap.keys() if band not in bands_10m]
-    files_10m = [file.replace("B02", band) for band in layermap.keys() if band in bands_10m]
-    files_20m = [file.replace("B02", band) for band in layermap.keys() if band not in bands_10m]
-    da_combined_10m = xr.open_mfdataset(
-        files_10m,
-        engine="rasterio",
-        concat_dim="band",
-        combine="nested",
-    )
-    da_combined_10m.coords["band"] = layermap_10m
-    da_combined_20m = xr.open_mfdataset(
-        files_20m,
-        engine="rasterio",
-        concat_dim="band",
-        combine="nested",
-    ).interp(
-        x=da_combined_10m["x"],
-        y=da_combined_10m["y"],
-        method="nearest",
-        kwargs={"fill_value": "extrapolate"},
-    )
-    da_combined_20m.coords["band"] = layermap_20m
-    return xr.concat([
-        da_combined_10m.to_array().squeeze("variable", drop=True),
-        da_combined_20m.to_array().squeeze("variable", drop=True)
-        ],
-        dim="band"
-    )
 
-
-
-
-
-def load_stack(files: list[Path], times: list[datetime], point, config, apply_mask=False, single_band=False):
+def load_stack(
+    files: list[Path], times: list[datetime], point, config, apply_mask=False
+):
     with rasterio.open(files[0], "r") as tif:
         transform = tif.transform
         pixel_size_x = transform.a
@@ -427,10 +402,7 @@ def load_stack(files: list[Path], times: list[datetime], point, config, apply_ma
         warnings.filterwarnings("ignore", category=UserWarning, module="rioxarray")
         for i, tif_path in enumerate(files):
             try:
-                if single_band:
-                    da = stack_single_band(tif_path, config["vars"].layermap)
-                else:
-                    da = rioxarray.open_rasterio(tif_path, masked=apply_mask)
+                da = rioxarray.open_rasterio(tif_path, masked=apply_mask)
             except rasterio.errors.RasterioIOError as e:
                 logger.warning(f"Error opening {tif_path}: {e}")
                 del times[i]
@@ -589,17 +561,19 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
             filtered_im = []
             t_common = []
             t_ambiguous = set()
-            
+
             for timestamp in sorted(t_common_set):
-                n_qa = t_qa.count(timestamp)    # each count must be >0 (common timestamps)
+                n_qa = t_qa.count(
+                    timestamp
+                )  # each count must be >0 (common timestamps)
                 n_im = t_im.count(timestamp)
-                if n_qa == 1 and n_im == 1:     # unambiguous consistency 
+                if n_qa == 1 and n_im == 1:  # unambiguous consistency
                     i_qa = t_qa.index(timestamp)
                     i_im = t_im.index(timestamp)
                     t_common.append(timestamp)
                     filtered_qa.append(tif_lists["q"][i_qa])
                     filtered_im.append(tif_lists["10m"][i_im])
-                elif n_qa == 1 and n_im > 1:   # ambiguous consistency - pad qa list
+                elif n_qa == 1 and n_im > 1:  # ambiguous consistency - pad qa list
                     i_qa = t_qa.index(timestamp)
                     start = 0
                     for k in range(n_im):
@@ -608,7 +582,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
                         filtered_qa.append(tif_lists["q"][i_qa])
                         filtered_im.append(tif_lists["10m"][i_im])
                         start = i_im + 1
-                elif n_qa >= 1 and n_im == 1:   # ambiguous consistency - pad im list
+                elif n_qa >= 1 and n_im == 1:  # ambiguous consistency - pad im list
                     i_im = t_im.index(timestamp)
                     start = 0
                     for k in range(n_qa):
@@ -617,7 +591,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
                         filtered_qa.append(tif_lists["q"][i_qa])
                         filtered_im.append(tif_lists["10m"][i_im])
                         start = i_qa + 1
-                else:                           # unresolved ambiguity - drop items
+                else:  # unresolved ambiguity - drop items
                     t_ambiguous.add(timestamp)
 
             tif_lists["q"] = filtered_qa
@@ -680,7 +654,7 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
             continue
 
         if config["vars"].legacy_mode or config["vars"].q_mode is None:
-            selector = [True]*len(tif_lists["10m"])
+            selector = [True] * len(tif_lists["10m"])
         else:
             # this stack is loaded without applying the nd-mask to preserve integer data type
             # otherwise xarray converts everything to float because nd is represented as NaN
@@ -700,7 +674,9 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
                     )
                 if config["vars"].masking_classes is not None:
                     if config["vars"].eval_bitwise:
-                        ts_q_bin = xr.ones_like(selected_band, dtype=bool) # start: all valid
+                        ts_q_bin = xr.ones_like(
+                            selected_band, dtype=bool
+                        )  # start: all valid
                         for val in config["vars"].masking_classes:
                             not_masked = (selected_band & val) == 0
                             ts_q_bin = ts_q_bin & not_masked
@@ -708,7 +684,9 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
                         ts_q_bin = ~selected_band.isin(config["vars"].masking_classes)
                 elif config["vars"].valid_classes is not None:
                     if config["vars"].eval_bitwise:
-                        ts_q_bin = xr.zeros_like(selected_band, dtype=bool) # start: all invalid
+                        ts_q_bin = xr.zeros_like(
+                            selected_band, dtype=bool
+                        )  # start: all invalid
                         for val in config["vars"].valid_classes:
                             not_masked = (selected_band & val) > 0
                             ts_q_bin = ts_q_bin | not_masked
@@ -763,7 +741,12 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
         # select appropriate bands and convert to dataset
         selected_bands = list(config["vars"].layermap.values())
         rename_dict = {v: k for k, v in config["vars"].layermap.items()}
-        ts = ts.sel(band=selected_bands).to_dataset("band").rename_vars(rename_dict)
+        ts = (
+            ts.sel(band=selected_bands)
+            .to_dataset("band")
+            .rename_vars(rename_dict)
+            .astype(np.float32)
+        )
 
         # add any on the fly defined indices
         for index_name, index_formula in config["vars"].indices.items():
@@ -773,7 +756,6 @@ def data_loader(pid_queue, preloaded_data_queue, args, original_geom_df, failed_
             )
             result = re.sub(pattern, r'ts["\1"]', index_formula)
             ts[index_name] = eval(result)
-
 
         wgs_transformer = Transformer.from_crs(
             original_geom_df.crs, 4326, always_xy=True
@@ -947,7 +929,9 @@ def process_pid(args, preloaded_data):
         )
         confidence = confidence_input or previous_confidence
         while confidence not in {"high", "medium", "low", "h", "m", "l", None}:
-            confidence = input("Please enter 'high', 'medium', or 'low': ").strip().lower()
+            confidence = (
+                input("Please enter 'high', 'medium', or 'low': ").strip().lower()
+            )
         if confidence in {"h", "m", "l"}:
             confidence = {"h": "high", "m": "medium", "l": "low"}[confidence]
 
@@ -1022,7 +1006,7 @@ def run_tsbrowser(args):
     all_pids_to_process = []
     if not args.pid:
         all_pids = geom_df[config["vars"].attr_id].astype(str).tolist()
-        
+
         if args.show_all:
             print("Showing all PIDs regardless of interpretation status...")
             all_pids_to_process = all_pids
@@ -1038,8 +1022,7 @@ def run_tsbrowser(args):
                     flag_dir = Path(args.config).parent / flag_dir
 
             existing_flags = {
-                f.stem[len("flags_") : ]
-                for f in flag_dir.glob("flags_*.json")
+                f.stem[len("flags_") :] for f in flag_dir.glob("flags_*.json")
             }
 
             all_pids_to_process = [
@@ -1076,7 +1059,8 @@ def run_tsbrowser(args):
     loader_threads = []
     for _ in range(num_preload_threads):
         thread = threading.Thread(
-            target=data_loader, args=(pid_queue, preloaded_data_queue, args, geom_df, failed_pids)
+            target=data_loader,
+            args=(pid_queue, preloaded_data_queue, args, geom_df, failed_pids),
         )
         thread.daemon = True
         loader_threads.append(thread)
@@ -1084,7 +1068,7 @@ def run_tsbrowser(args):
 
     processed_pids_count = 0
     print(f"Waiting for next PID data to be preloaded...")
-    while (len(failed_pids)+processed_pids_count) < len(all_pids_to_process):
+    while (len(failed_pids) + processed_pids_count) < len(all_pids_to_process):
         try:
             preloaded_data = preloaded_data_queue.get(timeout=1)
         except queue.Empty:

@@ -1,7 +1,7 @@
 import matplotlib.dates as mdates
 
 # set interpreter ID
-interpreter = 'jdoe'
+interpreter = "jdoe"
 
 # set point sample vector file path
 # the path can be specified either absolute or relative to the configuration file directory
@@ -31,8 +31,8 @@ t_format = "%Y%m%dT%H%M%S"  # used if t_mode == filename
 q_mode = "classes"  # possible values: classes, threshold_lt, threshold_gt
 q_band = 1  # set which band to read from each quality raster file
 masking_classes = (0, 8, 9, 11)  # used if mode == 'classes'
-valid_classes = None 
-eval_bitwise = False # used if mode == "classes"
+valid_classes = None
+eval_bitwise = False  # used if mode == "classes"
 threshold = 3  # used if mode in ('threshold_gt', 'threshold_lt')
 overall_valid_ratio = 0.1
 specific_radius = 9
@@ -43,7 +43,7 @@ default_flag_label = "0"
 add_flag_labels = "a b c d e f g h".split()
 
 # set an output directory to store flag files (json format)
-# if None, write to the directory containing the sample vector file 
+# if None, write to the directory containing the sample vector file
 flag_dir = "flags-demo"
 
 # assign names to input bands
@@ -107,7 +107,7 @@ pct_max = 98.0  # for stretch mode pct_clip
 std_factor = 2.5  # for stretch mode mean_stddev and median_mad
 
 # format x-axis of time series plots
-monthLoc = mdates.MonthLocator(bymonth=range(1, 13, 3)) # quarterly ticks
+monthLoc = mdates.MonthLocator(bymonth=range(1, 13, 3))  # quarterly ticks
 # monthLoc = mdates.MonthLocator(bymonth=range(1, 13, 6)) # half-yearly ticks
 monthFmt = mdates.DateFormatter("%Y %b %d")
 
