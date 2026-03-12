@@ -3,7 +3,12 @@ name = "tsbrowser"
 version = "0.1.1"
 description = "Timeseries Browser for Sentinel-2 data analysis and labeling"
 readme = "README.md"
+authors = [
+    { name = "Jonas Viehweger", email = "jonas.viehweger@joanneum.at" },
+    { name = "Martin Puhm" }
+]
 requires-python = ">=3.10"
+license = {text = "EUPL-1.2"}
 dependencies = [
     "aiohttp>=3.12.13",
     "dask>=2024.8.0",
@@ -19,15 +24,15 @@ dependencies = [
 [project.scripts]
 tsbrowser = "tsbrowser.cli:main"
 
+[project.urls]
+Homepage = "https://github.com/JR-DIGITAL/tsbrowser"
+Documentation = "https://jr-digital.github.io/tsbrowser/"
+Repository = "https://github.com/JR-DIGITAL/tsbrowser"
+Issues = "https://github.com/JR-DIGITAL/tsbrowser/issues"
+
 [build-system]
-requires = ["setuptools>=64,<76", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-data]
-tsbrowser = ["assets/*"]
+requires = ["uv_build>=0.10.9,<0.11.0"]
+build-backend = "uv_build"
 
 [tool.ruff.lint]
 extend-select = [
