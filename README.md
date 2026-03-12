@@ -2,22 +2,31 @@
 
 `tsbrowser` is an interactive tool for browsing, interpreting, and labelling Sentinel-2 time series. Full documentation is available at https://jr-digital.github.io/tsbrowser/.
 
-## Environment setup with `uv`
+## Installation
 
-[`uv`](https://docs.astral.sh/uv/) handles the virtual environment, Python interpreter, and dependency installation described in `pyproject.toml`.
+tsbrowser is available on PyPI so it can be installed using pip:
 
-```bash
-uv venv --python 3.11
-source .venv/bin/activate
-# create .venv/ and install tsbrowser + runtime deps (uses uv.lock if present)
-uv sync
+```
+pip install tsbrowser
+```
 
-# confirm the CLI is available
+Confirm that it was correctly installed in the environment by running:
+
+```
 tsbrowser --help
 ```
 
-- Use `uv sync --group dev` if you also need the documentation tooling defined in the `dev` dependency group.
-- You can avoid activating the environment by prefacing commands with `uv run`, e.g. `uv run tsbrowser --help`.
+## Running as a tool with `uv``
+
+[`uv`](https://docs.astral.sh/uv/) handles the virtual environment, Python interpreter, and dependency installation described in `pyproject.toml`.
+
+To run the cli just run:
+
+```bash
+uvx tsbrowser --help
+```
+
+The tool will be installed and run in its own separate environment.
 
 ## Using the `tsbrowser_demo_setup` sample data
 
@@ -39,7 +48,7 @@ This creates a `tsbrowser_demo_setup/` directory containing the raster stacks, s
 ```bash
 rm -rf tsbrowser_demo_setup/flags-demo/  # start fresh
 cd tsbrowser_demo_setup
-uv run tsbrowser demo_config_default.py
+uvx tsbrowser demo_config_default.py
 ```
 
 This configuration expects on-the-fly QA evaluation and points the CLI to the `vector/demo_points.shp` shapefile together with Sentinel-2 L2A chips stored in `raster/imagery-default-mode/`. Use `--pid <id>` to open specific samples or leave it out to iterate through all unflagged features.
@@ -51,7 +60,7 @@ This configuration expects on-the-fly QA evaluation and points the CLI to the `v
 ### 3. Try the legacy-mode example
 
 ```bash
-uv run tsbrowser /path/to/tsbrowser_demo_setup/demo_config_legacy.py
+uvx tsbrowser /path/to/tsbrowser_demo_setup/demo_config_legacy.py
 ```
 
 Legacy mode works with the pre-filtered chips under `raster/imagery-legacy-mode/` and skips QA masking.
@@ -62,7 +71,7 @@ Flag annotations are written to the directory defined by `flag_dir` in each conf
 
 ```bash
 cp tsbrowser_demo_setup/demo_config_default.py tsbrowser_demo_setup/my_config.py
-uv run tsbrowser tsbrowser_demo_setup/my_config.py
+uvx tsbrowser tsbrowser_demo_setup/my_config.py
 ```
 
 Make sure the relative paths inside the config still point to the folders that contain your data.

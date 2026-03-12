@@ -1,4 +1,6 @@
 site_name: tsbrowser - Time Series Browser
+repo_url: https://github.com/JR-DIGITAL/tsbrowser
+repo_name: JR-DIGITAL/tsbrowser
 theme:
   name: material
   features:

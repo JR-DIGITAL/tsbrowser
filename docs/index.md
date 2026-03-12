@@ -10,18 +10,18 @@ The package can be installed directly from github. Since the package provides a 
 
 === "pip"
     ```
-    pip install git+https://github.com/JR-DIGITAL/tsbrowser.git
+    pip install tsbrowser
     tsbrowser
     ```
 
 === "pipx"
     ```
-    pipx run --spec git+https://github.com/JR-DIGITAL/tsbrowser.git tsbrowser
+    pipx run tsbrowser
     ```
 
 === "uvx"
     ```
-    uvx git+https://github.com/JR-DIGITAL/tsbrowser.git
+    uvx tsbrowser
     ```
 
 This should run the `tsbrowser` command line interface and print the following output:
