@@ -6,7 +6,7 @@ It provides an interactive plot in which segments and events can be labelled. Th
 
 ## Installation
 
-The package can be installed directly from github. Since the package provides a script entrypoint, it can also be run directly using `uvx` or `pipx`.
+The package can be installed directly using pip. Since the package provides a script entrypoint, it can also be run directly using `uvx` or `pipx`.
 
 === "pip"
     ```
